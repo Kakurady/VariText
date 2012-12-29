@@ -1,10 +1,27 @@
+//(c) Kakurady 2010, 2011, 2012.
+//Includes portions dedicated to the public domain by Nexii Malthus.
+
+
+string version = "20120620";
+
 //----- Behaviour -----//
 float scale=0.1; // height of line
 float line_width = 1.5; //width of line
 float height = 0.2;
 integer listen_channel = 12; //channel on which script listens
+integer menu_channel = -9013;
 
 integer centered = TRUE; //center the text on the board instead of starting from the left-top
+
+//Settings
+string nc_name = "metrics";
+
+vector float_text_color = <1, 1, 1>;
+float  float_text_alpha = 1;
+
+string nc_progress_bar = " ▏▎▍▌▋▊▉█";
+list nc_progress_bar_l = ["░","▏","▎","▍","▌","▋","▊","▉","█"];
+integer nc_progress_bar_length = 8;
 
 //----- Font definition -----//
 string tex="droid serif 1"; //name or uuid of texture
@@ -22,6 +39,238 @@ integer LINE_LIST_STRIDE = 3; //how many list items does one line properities oc
 integer dirty = 32767; //what's the highest used item on the last painting
 
 integer DEBUG_LAYOUT = TRUE;
+
+string text;
+
+//notecard reader states
+integer NC_DO_NOTHING = 0;
+integer NC_INIT = 10;
+integer NC_INIT_GET_COUNT = 11;
+integer NC_READ_FONT_HEADER = 20;
+integer NC_READ_FONT_DEF = 21;
+
+integer nc_line = 1;
+integer nc_num_lines = 0;
+integer nc_do = 0;
+string  nc_what = "";
+integer nc_last_section_line = 0;
+
+list typefaces = []; 
+list typefaces_index = [];
+list typefaces_next_index = [];
+
+list _typefaces;
+list _typefaces_index;
+
+string _tex;
+string _chars;
+list _extents;
+integer _em;
+integer _columns;
+integer _rows;
+float _bump;
+string _typeface_name = "";
+integer nc_type_start_line = 0;
+integer nc_type_end_line = 0;
+
+
+//menu states
+//integer PAGE_HOME = 0;
+//integer PAGE_FONT_FAMILIES = 1;
+integer last_page = 0;
+
+/* list typefaces = ["Arial", 
+"Bitstream Charter", 
+"Cantarell", 
+"Comic Sans MS", 
+"Courier New", 
+"DejaVu Sans", 
+"DejaVu Sans Mono", 
+"DejaVu Serif", 
+"Droid Sans", 
+"Droid Sans Mono", 
+"Droid Serif", 
+"eurofurence", 
+"eurofurence classic", 
+"Georgia", 
+"HandelGotD", 
+"Impact", 
+"Liberation Mono", 
+"Liberation Sans", 
+"NanumGothic", 
+"NanumMyeongjo", 
+"Nekotoba", 
+"Nekotoba2", 
+"Purisa", 
+"Sawasdee"];
+*/
+integer num_fonts = 0;
+integer typefaces_page = 0;
+integer typefaces_total_pages = 0;
+
+key operator_id = NULL_KEY;
+
+
+//-------Menu System-------//
+integer divide_and_round_up(integer nom, integer dem){
+    if(nom % dem){
+        return (nom / dem + 1);
+    } else {
+        return (nom / dem);
+    }
+}
+list pad(integer length){
+    list temp = [];
+    integer i;
+    for (i = 0; i < length ; i++){
+        temp += "□";
+    }
+    return temp;
+}
+dlg_main(key avatar){
+    llDialog(
+        avatar,
+        (string)[
+        "\n› Main Menu\n",
+        "v. ", (string) version
+        ],
+        ["Fonts","Reset Prims", "Reload Fonts", "Access", "White", "Black"],
+        menu_channel
+    );
+}
+dlg_fonts(key avatar){
+    
+    if (num_fonts > 11){
+        string page_indicator = (string)["Page ", typefaces_page+1,"/",typefaces_total_pages];
+        integer from = typefaces_page * 9;
+        integer to = (typefaces_page + 1) * 9;
+        list padding = [];
+        if (to > num_fonts){
+            padding = pad(to - num_fonts);
+            to = num_fonts;
+        }
+        to -= 1;
+        llDialog(
+            avatar,
+            (string)[
+            "\n› Fonts\n", page_indicator
+            ],
+            ["■ Home", "◀ Prev", "▶ Next"] + llList2List(typefaces, from, to) + padding,
+            menu_channel
+        );
+    } else {
+        llDialog(
+            avatar,
+            (string)[
+            "\n› Fonts\n"],
+            ["■ Home"] + llList2List(typefaces, 0, 10),
+            menu_channel
+        );
+
+    }
+}
+dlg_access(key avatar){
+    llDialog(
+        avatar,
+        (string)[
+        "\n› Access\n",
+        "The access menu is not yet implemented."],
+        ["■ Home"],
+        menu_channel
+    );
+}
+
+//------Notecard Reader------//
+
+//                  Progress Bar v1                  //
+//                  By Nexii Malthus                 //
+//                   Public Domain                   //
+
+//http://wiki.secondlife.com/wiki/Progress_Bar
+//A bit terse, but why reinvent the wheel?
+// (one compelling reason is that this stratergy doesn't work for inputs outside 0.0..1.0)
+//for the blank cell.
+string Bars( float Cur, integer Bars, list Charset ){
+    // Input    = 0.0 to 1.0
+    // Bars     = char length of progress bar
+    // Charset  = [Blank,<Shades>,Solid];
+    integer Shades = llGetListLength(Charset)-1;
+            Cur *= Bars;
+    integer Solids  = llFloor( Cur );
+    integer Shade   = llRound( (Cur-Solids)*Shades );
+    integer Blanks  = Bars - Solids - 1;
+    string str;
+    
+    while( Solids-- >0 ) 
+        str += llList2String( Charset, -1 );
+    if( Blanks >= 0 ) 
+        str += llList2String( Charset, Shade );
+    while( Blanks-- >0 ) 
+        str += llList2String( Charset, 0 );
+    return str; 
+}
+showProgressText(string reason, integer value, integer total){
+    if (reason == "") { reason = "Reading Notecard"; }
+    float progress = 0.0;
+    string progressbar = "";
+    if (total > 0){
+        progress =  value / (float)total;
+        progressbar = Bars(progress, nc_progress_bar_length, nc_progress_bar_l);
+    }
+    llSetText(
+        (string)[reason, "\n", 
+            value, "/", total, " ", "|", progressbar, "|"],
+        float_text_color, float_text_alpha
+    );
+}
+
+start_loading_notecard(){
+        if(nc_do == NC_DO_NOTHING){
+            llSetText((string)["Reading Notecard\n", "..."],float_text_color, float_text_alpha);
+            llGetNumberOfNotecardLines(nc_name);
+            nc_do = NC_INIT_GET_COUNT;
+        } else {
+            llOwnerSay("A notecard is currently being read.");
+        }
+}
+notecard_attr_first_line(string what, string value){
+    if(what == "chars"){
+        
+        //to prevent the first space being eaten
+        if(llGetSubString(value, 0, 0) != " "){
+            value = " " + value;
+        }
+        notecard_attr_line(what, value);
+    } else if (what == "em"){
+        _em = (integer) value;
+    } else if (what == "columns") {
+        _columns = (integer) value;
+    } else if (what == "rows") {
+        _rows = (integer) value;
+    } else if (what == "bump"){
+        _bump = (float) value;
+    } else {
+        notecard_attr_line(what, value);
+    }
+}
+notecard_attr_line(string what, string value){
+    if (what == "tex"){
+        _tex = _tex + llStringTrim(value, STRING_TRIM);
+    } else if (what == "chars") {
+        _chars = _chars + value;
+    } else if (what == "extents" || what == "aw"){
+        list parsed = llParseString2List(value , [",", " "], []);
+        list converted = [];
+        integer i;
+        for (i = 0; i < llGetListLength(parsed); i++){
+            converted += (integer) llList2String(parsed, i);
+        }
+        _extents += converted;
+    }
+
+}
+notecard_attr_end(string what){
+}
 
 //----- Actual program starts here -----//
 
@@ -64,6 +313,8 @@ integer is_whitespace (string char){
 //split text into lines
 //input: The text to be wrapped.
 //return: T list with stride 3, containing the start of the line, the end of it, and the width of the line.
+
+//TODO: Split into Parse and Render stages
 list do_line_wrapping(string input){
     integer len = llStringLength(input);
     integer prims = llGetNumberOfPrims();
@@ -218,6 +469,8 @@ list do_line_wrapping(string input){
     return lines;
 }
 do_layout(string input){
+    text = input;
+    
     list lines = do_line_wrapping(input);
     integer num_lines = llGetListLength(lines) / LINE_LIST_STRIDE;
     integer line;
@@ -418,7 +671,7 @@ integer todex2(string input, integer pos, integer limit){
     return 0;
 }
 init(){
-        llSetLinkPrimitiveParams(LINK_SET, [
+        llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
         PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45, 0.45,0>, 0.0,
         PRIM_SIZE, <(float)scale*1.2, 0.01,scale>
         ]);
@@ -430,16 +683,281 @@ default
     //displahy some test words, and start listening
     state_entry()
     {
-        llSay(0, "Script running");
-        //init();
+        llSay(0, "Hello, Avatar!");
         do_layout("The quick brown fox jumps over a lazy dog.");
+        if (num_fonts < 1){ start_loading_notecard();}
+        llListen(menu_channel, "", NULL_KEY, "");
         llListen(listen_channel, "","","");
+    }
+    touch_start(integer total_number)
+    {
+//        integer i;
+//        key k = NULL_KEY;
+//        for (i = 0; i < total_number; i++){
+//            key d = llDetectedKey(i);
+//            if (d != k){
+//                dlg_main(d);
+//                k = d;
+//            }
+//        }
+
+//HACK: Let's hope no more than one person will touch the object each frame!
+        if (total_number){
+            dlg_main(llDetectedKey(0));
+        }
     }
     //text chat event
     listen(integer channel, string name, key id, string msg){
-        llOwnerSay(name);
-        llOwnerSay(msg);
-        do_layout(msg);
+        if (channel == listen_channel){
+            llOwnerSay(name);
+            //llOwnerSay(msg);
+            do_layout(msg);
+        } 
+        else if (channel == menu_channel){
+            if (operator_id != id){
+                operator_id = NULL_KEY;
+            }
+            
+            //TODO: Seperate out processing for each menu.
+            if ("■ Home" == msg){
+                dlg_main(id);
+            } 
+            else if ("◀ Prev" == msg){
+                typefaces_page -=1;
+                if (typefaces_page < 0){typefaces_page = typefaces_total_pages - 1;}
+                dlg_fonts(id);
+            }
+            else if ("▶ Next" == msg){
+                typefaces_page +=1;
+                if (typefaces_page >= typefaces_total_pages){typefaces_page = 0;}
+                dlg_fonts(id);
+            } 
+            else if ("□" == msg){
+                dlg_fonts(id);
+            } 
+            else if ("Fonts" == msg){
+                dlg_fonts(id);
+            }
+            else if ("Access" == msg){
+                dlg_access(id);
+            } else if ("Reload Fonts" == msg){
+                start_loading_notecard();
+            } else if ("Reset Prims" == msg){
+                init();
+                dlg_main(id);
+            } else if ("White" == msg){
+        llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
+        PRIM_COLOR, ALL_SIDES, <1, 1, 1>, 1.0
+        ]);
+                dlg_main(id);
+            } else if ("Black" == msg){
+        llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
+        PRIM_COLOR, ALL_SIDES, <0, 0, 0>, 1.0
+        ]);
+                dlg_main(id);
+            }else {
+                integer i;
+                for (i = 0; i < num_fonts; i++){
+                    if (llList2String(typefaces, i) == msg){
+                        //TODO: Test if avatar and if in region.
+                        list noti = ["Font has changed to ", msg ,", which is number ", i, " on line ", llList2Integer(typefaces_index, i)];
+                        //llInstantMessage(id, (string)noti);
+                        //llRegionSayTo(id, PUCLIC_CHANNEL noti)
+                        llSay(PUBLIC_CHANNEL, (string) noti);
+                        
+                        //dlg_fonts(id);
+                        operator_id = id;
+                        nc_do = NC_READ_FONT_HEADER;
+                        _typeface_name = llList2String(typefaces, i);
+                        
+                        nc_line = llList2Integer(typefaces_index, i);
+                        llGetNotecardLine(nc_name, nc_line);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+    dataserver(key queryid, string data){
+//        llOwnerSay((string)["Reading line", nc_line]);
+        
+        if (nc_do == NC_INIT_GET_COUNT){
+            nc_num_lines = (integer) data;
+            nc_line = 0;
+            _typefaces = [];
+            _typefaces_index = [];
+            showProgressText("", nc_line, nc_num_lines);
+            llGetNotecardLine(nc_name, nc_line);
+            nc_do = NC_INIT;
+        } else if (nc_do == NC_INIT){
+            if (data != EOF){
+                if(llGetSubString(data, 0, 0) == "["){
+                    integer closing_bracket = llSubStringIndex(data, "]");
+                    if (closing_bracket != -1) {
+                        string name = llGetSubString(data, 1, closing_bracket -1);
+                        _typefaces += [llToLower(name), name, nc_line];
+                    }
+                }
+                //llOwnerSay(data);
+                nc_line++;
+                showProgressText("", nc_line, nc_num_lines);
+                llGetNotecardLine(nc_name, nc_line);
+                //nc_do is still NC_INIT
+            } else { //data != EOF
+
+                nc_do = NC_DO_NOTHING;
+                //FIXME llListSort might be O(n²) on SL and very likely to be O(n²) on OpenSim
+                //llOwnerSay(llList2CSV(_typefaces));
+                _typefaces = llListSort(_typefaces, 3, TRUE);
+                //llOwnerSay(llList2CSV(_typefaces));
+                //FIXME llList2ListStrided isn't making any sense.
+                typefaces = llList2ListStrided(llDeleteSubList(_typefaces, 0, 0), 0, -1, 3);
+                typefaces_index = llList2ListStrided(llDeleteSubList(_typefaces, 0, 1), 0, -1, 3);
+                
+                num_fonts = llGetListLength(typefaces);
+                typefaces_total_pages = divide_and_round_up(num_fonts, 9); // 9 is the number of fonts to display each page, after subtracting the 3 navigation buttons
+
+                llSay(PUBLIC_CHANNEL, (string)["End of notecard reached, found ", num_fonts, " fonts."]);
+                llSetText((string)[""],float_text_color, float_text_alpha);
+
+                //llOwnerSay(llList2CSV(typefaces));
+                //llOwnerSay(llList2CSV(typefaces_index));
+                //llOwnerSay(llList2CSV(typefaces_next_index));
+                
+            } // data != EOF
+        } else if (nc_do == NC_READ_FONT_HEADER){
+            llSetText((string)["Reading Font ", _typeface_name], float_text_color, float_text_alpha);
+            //set up temporary variables
+            _tex = ""; //required.
+            _chars="";
+            _extents = []; //required.
+            _em = 50;
+            _columns = 10;
+            _rows = 10;
+            _bump = -0.01;
+            
+            //TODO verify that we're reading the right section and the notecard was not edited
+            nc_do = NC_READ_FONT_DEF;
+            nc_what = "";
+            nc_line++;
+            llGetNotecardLine(nc_name, nc_line);
+            
+        } else if (nc_do == NC_READ_FONT_DEF){
+            llSetText((string)["Reading Font ", _typeface_name], float_text_color, float_text_alpha);
+
+            string leader = llGetSubString(data, 0, 0);
+            integer where = 0;                
+            if (leader == "#"){
+                
+                //comment, do nothing
+                nc_line++;
+                llGetNotecardLine(nc_name, nc_line);
+                
+            } else if (leader == "[" || data == EOF){
+                
+                //it's the next section, end reading
+                //finish up the previous attribute
+                //set variables
+                //re-layout and render
+                notecard_attr_end(nc_what);
+                nc_do = NC_DO_NOTHING;
+                
+                if (_tex == ""){ //required.
+                    //llSay(DEBUG_CHANNEL, "missing texture name in Font definition for [] ");
+                    _tex = _typeface_name;
+                }; 
+                tex = _tex;
+                
+                if (_em <= 0 ){ // must be positive.
+                    llSay(DEBUG_CHANNEL, "character cell size is not a positive integer in Font definition for [] ");
+                    _em = 50;
+                }
+                em = _em;
+                
+                if (_columns <= 0 ){ // must be positive.
+                    llSay(DEBUG_CHANNEL, "number of columns must be larger than zero in Font definition for [] ");
+                    _columns = 10;
+                } 
+                columns = _columns;
+                
+                if (_rows <= 0 ){ // must be positive.
+                    llSay(DEBUG_CHANNEL, "number of rows must be larger than zero in Font definition for [] ");
+                    _rows = 10;
+                } 
+                rows = _rows;
+                
+                if (_chars == ""){
+                    _chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         ";                    
+                }
+                
+                integer cells = columns * rows;
+                
+                //if (llStringLength(_chars) != llGetListLength(_extents) && cells != llGetListLength(_extents))
+                if( FALSE ){
+                    llSay(DEBUG_CHANNEL, "number of character data is diferent from the number of characters in Font definition for [] ");
+                }
+                //comprensate for trimmed spaces
+                integer i;
+                
+                integer num_spaces = cells - llStringLength(_chars);
+                string spaces = "";
+                for (i = 0; i < num_spaces; i++){
+                    spaces += " ";
+                }
+                chars = _chars + spaces;
+                
+                if (llGetListLength(_extents) == 0){
+                    llSay(DEBUG_CHANNEL, "you need to supply the widths of characters in Font definition for [] ");
+                    _extents = [13];
+                }
+                
+                num_spaces = cells - llGetListLength(_extents);
+                for (i = 0; i < num_spaces; i++){
+                    _extents += llList2Integer(_extents, 0);
+                }
+                extents = _extents;
+                
+                bump = _bump;
+                
+                //Debug: Show the data.
+                //llOwnerSay(chars);
+                //llOwnerSay(llList2CSV(extents));
+                //llOwnerSay(llList2CSV([tex, em, columns, rows, bump]));
+                
+                llSetText("", float_text_color, float_text_alpha);
+                
+                llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
+        PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45, 0.45,0>, 0.0,
+        PRIM_SIZE, <(float)scale*1.2, 0.01,scale>
+        ]);
+                
+                do_layout(text);
+                //if nobody else have touched the menu, re-show the menu
+        
+                dlg_fonts (operator_id);
+                
+            } else if ((where = llSubStringIndex(data, "=")) != -1){
+                
+                //finish up the previous attribute
+                notecard_attr_end(nc_what);
+                
+                //read in the next attribute
+                nc_what = llStringTrim(llGetSubString(data, 0, where - 1 ), STRING_TRIM);
+                string contents = llStringTrim(llGetSubString(data, where + 1, -1), STRING_TRIM);
+                notecard_attr_first_line(nc_what, contents);
+                
+                nc_line++;
+                llGetNotecardLine(nc_name, nc_line);
+                
+            } else {
+                notecard_attr_line(nc_what, data);
+                
+                nc_line++;
+                llGetNotecardLine(nc_name, nc_line);
+            }
+//branches except "[" should break to here to get rid of duplicate statements
+//            nc_line++;
+//            llGetNotecardLine(nc_name, nc_line);
+        }
     }
 }
-
