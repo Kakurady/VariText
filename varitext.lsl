@@ -1,7 +1,7 @@
 //(c) Kakurady 2010, 2011, 2012.
-//Includes portions dedicated to the public domain by Nexii Malthus.
+//Includes portions dedicated to the public domain by Nexii Malthus, kimmie Loveless and others.
 
-string version = "20120902\nSet text on channel 12";
+string version = "20120903\nSet text on channel 12";
 
 //----- Behaviour -----//
 float scale=0.1; // height of line
@@ -10,10 +10,11 @@ float height = 0.2; // height of display
 integer listen_channel = 12; //channel on which script listens
 integer menu_channel = -9013;
 
-integer verbose = 0;
-integer say_to_owner = TRUE;
+integer verbose = 32;
+integer say_to_owner = FALSE;
 
 integer centered = TRUE; //center the text on the board instead of starting from the left-top
+integer skip_spaces = TRUE;
 
 string nc_name = "metrics"; //name of font notecard
 
@@ -27,7 +28,6 @@ integer access_applied_to_objects = FALSE;
 vector float_text_color = <1, 1, 1>;
 float  float_text_alpha = 1;
 
-string nc_progress_bar = " ▏▎▍▌▋▊▉█";
 list nc_progress_bar_l = ["░","▏","▎","▍","▌","▋","▊","▉","█"];
 integer nc_progress_bar_length = 8;
 
@@ -39,14 +39,14 @@ integer em = 50; //font width divider
 integer columns = 10; //number of columns in texture
 integer rows = 10; //number of row in texture
 float bump = -0.01; //some fonts needs some adjustment vertically
+float t_height = 512;
+float t_width = 512;
 //float bump = 0.0;
 
 //----- Some internal stuff -----//
 integer LINE_LIST_STRIDE = 3; //how many list items does one line properities occupy
 
 integer dirty = 32767; //what's the highest used item on the last painting
-
-integer DEBUG_LAYOUT = TRUE;
 
 string text;
 
@@ -61,30 +61,21 @@ integer nc_line = 1;
 integer nc_num_lines = 0;
 integer nc_do = 0;
 string  nc_what = "";
-integer nc_last_section_line = 0;
 
 list typefaces = []; 
 list typefaces_index = [];
-list typefaces_next_index = [];
 
 list _typefaces;
 list _typefaces_index;
 
-string _tex;
-string _chars;
-list _extents;
-integer _em;
-integer _columns;
-integer _rows;
-float _bump;
 string _typeface_name = "";
-integer nc_type_start_line = 0;
-integer nc_type_end_line = 0;
+//integer nc_type_start_line = 0;
+//integer nc_type_end_line = 0;
 
 //menu states
 //integer PAGE_HOME = 0;
 //integer PAGE_FONT_FAMILIES = 1;
-integer last_page = 0;
+//integer last_page = 0;
 
 integer num_fonts = 0;
 integer typefaces_page = 0;
@@ -118,7 +109,6 @@ warn(string message) {
     }
 }
 note(string message) {say(message, 1);}
-debug(string message) {say(message, 3);}
 
 integer UTF8Length(string msg)
 {
@@ -145,13 +135,20 @@ list pad(integer length){
     return temp;
 }
 dlg_main(key avatar){
+    string skipopt;
+    if (skip_spaces){
+        skipopt = "Skip [on]off";
+    } else {
+        skipopt = "Skip on[off]";
+    }
+    list l = ["Fonts","Reset Prims", "Reload Fonts", "Access", "White", "Black", skipopt];
     llDialog(
         avatar,
         (string)[
         "\n› Main Menu\n",
         "v. ", (string) version
         ],
-        ["Fonts","Reset Prims", "Reload Fonts", "Access", "White", "Black"],
+        l,
         menu_channel
     );
 }
@@ -279,30 +276,35 @@ notecard_attr_first_line(string what, string value){
         }
         notecard_attr_line(what, value);
     } else if (what == "em"){
-        _em = (integer) value;
+        em = (integer) value;
     } else if (what == "columns") {
-        _columns = (integer) value;
+        columns = (integer) value;
     } else if (what == "rows") {
-        _rows = (integer) value;
+        rows = (integer) value;
     } else if (what == "bump"){
-        _bump = (float) value;
+        bump = (float) value;
+    } else if (what == "t_width") {
+        t_width = (integer) value;
+    } else if (what == "t_height") {
+        t_height = (integer) value;
+    } else if (what == "tex"){
+        tex = llStringTrim(value, STRING_TRIM);
     } else {
         notecard_attr_line(what, value);
     }
 }
 notecard_attr_line(string what, string value){
-    if (what == "tex"){
-        _tex = _tex + llStringTrim(value, STRING_TRIM);
-    } else if (what == "chars") {
-        _chars = _chars + value;
+    if (what == "chars") {
+        chars = chars + value;
+        llOwnerSay(chars);
     } else if (what == "extents" || what == "aw"){
-        list parsed = llParseString2List(value , [",", " "], []);
+        list parsed = llParseString2List(value , [",", " "], ["(", ")", "[", "]"]);
         list converted = [];
         integer i;
         for (i = 0; i < llGetListLength(parsed); i++){
             converted += (integer) llList2String(parsed, i);
         }
-        _extents += converted;
+        extents += converted;
     }
 
 }
@@ -369,6 +371,8 @@ integer is_whitespace (string char){
 
 //TODO: Split into Parse and Render stages
 list do_line_wrapping(string input){
+    if (llGetListLength(extents) <= 0 ){return [];}
+    
     integer len = llStringLength(input);
     integer prims = llGetNumberOfPrims();
     integer i = 0;
@@ -384,7 +388,7 @@ list do_line_wrapping(string input){
     integer x_width = (integer)(line_width / scale * em);
 //    llOwnerSay((string) x_width);
     integer x_word = 0;
-    list debug_list = [];
+    //list debug_list = [];
     list words = [];
     integer num_words = 0;
     integer WORDS_LIST_STRIDE = 3; //begin, end, advance length
@@ -448,7 +452,8 @@ list do_line_wrapping(string input){
         
         cur_word_begin = llList2Integer(words, i * WORDS_LIST_STRIDE + 0);
         cur_word_end = llList2Integer(words, i * WORDS_LIST_STRIDE + 1);
-        integer x_word  = llList2Integer(words, i * WORDS_LIST_STRIDE + 2);
+        //integer 
+        x_word  = llList2Integer(words, i * WORDS_LIST_STRIDE + 2);
         
         if (x_word < x_width){
             // At least this word can fit into one line.
@@ -522,14 +527,17 @@ list do_line_wrapping(string input){
     return lines;
 }
 do_layout(string input){
+
     text = input;
+    if (llGetListLength(extents) <= 0 ){return;}
+    if (llStringLength(chars) <= 0 ){return;}
     
     list lines = do_line_wrapping(input);
     integer num_lines = llGetListLength(lines) / LINE_LIST_STRIDE;
     integer line;
     integer x_line = 0;
     
-    integer len = llStringLength(input);
+    //integer len = llStringLength(input);
     integer prims = llGetNumberOfPrims();
     integer i = 0; //current prim used
     integer j = 0; //current character
@@ -582,25 +590,25 @@ do_layout(string input){
             
             integer l = todex2(input, j, cur_line_end);
             
-                if (llGetSubString(input, j+1+skip, j+1+skip) == " ") {
+                if (skip_spaces && llGetSubString(input, j+1+skip, j+1+skip) == " ") {
                     skip++; next++; 
                     sp_post_l = x_sp / 2; sp_pre_m = x_sp - sp_post_l;
                 } next++;
             integer m = todex2(input, j+1+skip, cur_line_end);
             
-                if (llGetSubString(input, j+2+skip, j+2+skip) == " ") {
+                if (skip_spaces && llGetSubString(input, j+2+skip, j+2+skip) == " ") {
                     skip++; next++; 
                     sp_post_m = x_sp / 2; sp_pre_n = x_sp - sp_post_m;
                 } next++;
             integer n = todex2(input, j+2+skip, cur_line_end);
             
-                if (llGetSubString(input, j+3+skip, j+3+skip) == " ") {
+                if (skip_spaces && llGetSubString(input, j+3+skip, j+3+skip) == " ") {
                     skip++; next++;
                     sp_post_n = x_sp / 2; sp_pre_o = x_sp - sp_post_n;
                 } next++;            
             integer o = todex2(input, j+3+skip, cur_line_end);
             
-                if (llGetSubString(input, j+4+skip, j+4+skip) == " ") {
+                if (skip_spaces && llGetSubString(input, j+4+skip, j+4+skip) == " ") {
                     skip++; next++;
                     sp_post_o = x_sp / 2; sp_pre_p = x_sp - sp_post_o;
                 } next++;
@@ -635,9 +643,9 @@ do_layout(string input){
             integer space_after_n = space_after(n);
             integer space_before_o = space_before(o);
             integer space_after_p = space_after(p);
-            if (x_side > space_before_l + x_l + x_m + x_n_left || x_side > x_n_right + x_o + x_p + space_after_p){
-                //llSay(DEBUG_CHANNEL, "Not enough space in texture avaliable to pad out prim face:" +llGetSubString(input, j, j+3)+ " "+(string)[x_side, " ", space_before_l + x_l + x_m + x_n_left, " ", x_n_right + x_o + x_p + space_after_p]);
-            }
+            //if (x_side > space_before_l + x_l + x_m + x_n_left || x_side > x_n_right + x_o + x_p + space_after_p){
+            //    llSay(DEBUG_CHANNEL, "Not enough space in texture avaliable to pad out prim face:" +llGetSubString(input, j, j+3)+ " "+(string)[x_side, " ", space_before_l + x_l + x_m + x_n_left, " ", x_n_right + x_o + x_p + space_after_p]);
+            //}
             thiswidth = (float)(x_side * 2)/em*scale;
             this_left = (float)(x_left)/em*scale;
             
@@ -650,19 +658,19 @@ do_layout(string input){
             float x_hollow_gap_left = (1.0 - cut_end) * x_side * hollow;
             float x_hollow_gap_right = cut_begin * x_side * hollow;
             
-            float repeat_l = (float) x_side / 512;
-            float repeat_m = (float) ((sp_pre_m + x_m + sp_post_m) + (sp_pre_n + x_n_left) - x_hollow_gap_left) / 512;
-            float repeat_n = -(float) x_side / 512 * 4;
-            float repeat_o = (float) ((sp_pre_o + x_o + sp_post_o) + (sp_post_n + x_n_right) - x_hollow_gap_right) / 512;
-            float repeat_p = (float) x_side / 512;
+            float repeat_l = (float) x_side / t_width;
+            float repeat_m = (float) ((sp_pre_m + x_m + sp_post_m) + (sp_pre_n + x_n_left) - x_hollow_gap_left) / t_width;
+            float repeat_n = -(float) x_side / t_width * 4;
+            float repeat_o = (float) ((sp_pre_o + x_o + sp_post_o) + (sp_post_n + x_n_right) - x_hollow_gap_right) / t_width;
+            float repeat_p = (float) x_side / t_width;
             ;
             
-            vector offset_l = getGridOffset(l) + <(0.5 - cut_end) * repeat_l + (float)x_l / 2 / 512, 0, 0> + <(float)(sp_post_l) / em / 2 * repeat_l, 0, 0>;
-            vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / 512, 0, 0> + <(float)(sp_post_m - sp_pre_m)/ em * repeat_m, 0, 0>;;
+            vector offset_l = getGridOffset(l) + <(0.5 - cut_end) * repeat_l + (float)x_l / 2 / t_width, 0, 0> + <(float)(sp_post_l) / em / 2 * repeat_l, 0, 0>;
+            vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / t_width, 0, 0> + <(float)(sp_post_m - sp_pre_m)/ em * repeat_m, 0, 0>;;
             vector offset_n = getGridOffset(n) - <(hollow / 2 - 0.5) * repeat_n, 0, 0> ;//-  <(float)(sp_post_n - sp_pre_n)/em / 2 * repeat_n, 0, 0>;
             //llOwnerSay((string)[getGridOffset(n), <(0.5 - hollow / 2), 0, 0>, offset_n]);
-            vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / 512, 0, 0> + <(float)(sp_post_o - sp_pre_o)/em * repeat_o, 0, 0>;
-            vector offset_p = getGridOffset(p) - <(cut_begin - 0.5) * repeat_p + (float)x_p / 2 / 512, 0, 0> + <(float)(- sp_pre_p)/em / 2 * repeat_p, 0, 0>;
+            vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / t_width, 0, 0> + <(float)(sp_post_o - sp_pre_o)/em * repeat_o, 0, 0>;
+            vector offset_p = getGridOffset(p) - <(cut_begin - 0.5) * repeat_p + (float)x_p / 2 / t_width, 0, 0> + <(float)(- sp_pre_p)/em / 2 * repeat_p, 0, 0>;
             //llOwnerSay((string) [repeat_l, " ",repeat_o, offset_l, offset_o]);
             
             list paramslist = [PRIM_TYPE, PRIM_TYPE_BOX, PRIM_HOLE_DEFAULT, 
@@ -671,11 +679,11 @@ do_layout(string input){
     //            <(float)(x_l-x_n)/(2*(x_l+x_m+x_n)), 0.0, 0>,
             <1.0, 1.0, 0>,
             <0.0, 0.0, 0>,
-            PRIM_TEXTURE, 4, tex, <repeat_l, 0.1, 0.0> , offset_l, 0.0,
-            PRIM_TEXTURE, 8, tex, <repeat_m, 0.1, 0.0> , offset_m, 0.0,
-            PRIM_TEXTURE, 5, tex, <repeat_n, 0.1, 0.0> , offset_n, 0.0,
-            PRIM_TEXTURE, 7, tex, <repeat_o, 0.1, 0.0> , offset_o, 0.0,
-            PRIM_TEXTURE, 1, tex, <repeat_p, 0.1, 0.0> , offset_p, 0.0,
+            PRIM_TEXTURE, 4, tex, <repeat_l, (float)em/t_height, 0.0> , offset_l, 0.0,
+            PRIM_TEXTURE, 8, tex, <repeat_m, (float)em/t_height, 0.0> , offset_m, 0.0,
+            PRIM_TEXTURE, 5, tex, <repeat_n, (float)em/t_height, 0.0> , offset_n, 0.0,
+            PRIM_TEXTURE, 7, tex, <repeat_o, (float)em/t_height, 0.0> , offset_o, 0.0,
+            PRIM_TEXTURE, 1, tex, <repeat_p, (float)em/t_height, 0.0> , offset_p, 0.0,
             PRIM_SIZE, <(float)thiswidth / SQRT2, 0.01 ,scale>,
             PRIM_NAME, llGetSubString(input, j, next)];
             //not the best idea, better trim the list when l=0
@@ -698,8 +706,15 @@ do_layout(string input){
 
     }
     //pad everything with spaces from here
+            vector space_rpt = <(float)em/t_width, (float)em/t_height, 0.0> / 2.0;
     for(j=i; j< prims && j< dirty; j++){
-    llSetLinkPrimitiveParamsFast(j+1,[PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45,0.45,0>, 0.0]);
+
+    llSetLinkPrimitiveParamsFast(j+1,[PRIM_TEXTURE, ALL_SIDES, tex, space_rpt, <-0.45,0.45,0>, 0.0,
+    PRIM_POSITION,ZERO_VECTOR,
+    PRIM_TYPE, PRIM_TYPE_BOX, PRIM_HOLE_DEFAULT, 
+                <0, 1, 0>, 0, <0.25, 0.25, 0.0 >, 
+            <1.0, 1.0, 0>,
+            <0.0, 0.0, 0> ]);
     }
     dirty = i;
     llSetLinkPrimitiveParamsFast(LINK_ROOT,[PRIM_SIZE, <scale*((float)x_line/(float)em+0.2),0.010, scale*((float)line+0.2)>]);
@@ -726,7 +741,8 @@ integer todex2(string input, integer pos, integer limit){
 init(){
         llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
         PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45, 0.45,0>, 0.0,
-        PRIM_SIZE, <(float)scale*1.2, 0.01,scale>
+        PRIM_SIZE, <(float)scale*1.2, 0.01,scale>,
+        PRIM_NAME, ""
         ]);
 }
 
@@ -736,11 +752,12 @@ default
     //displahy some test words, and start listening
     state_entry()
     {
-        say("Hello, Avatar!", 1);
+        say((string)["Free Memory: ",llGetFreeMemory()], 1);
         do_layout("The quick brown fox jumps over a lazy dog.");
         if (num_fonts < 1){ start_loading_notecard();}
         llListen(menu_channel, "", NULL_KEY, "");
         llListen(listen_channel, "","","");
+        say((string)["Free Memory: ",llGetFreeMemory()], 1);
     }
     touch_start(integer total_number)
     {
@@ -763,9 +780,13 @@ default
     listen(integer channel, string name, key id, string msg){
         if (channel == listen_channel){
             if (check_access(id, ACCESS_WRITE)){
+                //llScriptProfiler(PROFILE_SCRIPT_MEMORY);
                 llOwnerSay(name);
                 //llOwnerSay(msg);
                 do_layout(msg);
+                //llScriptProfiler(PROFILE_NONE);
+                //say("This script used at most " + (string)llGetSPMaxMemory() + " bytes of memory during layout and rendering.", 2);
+                say((string)["Free Memory: ",llGetFreeMemory()], 2);
             }
         } 
         else if (channel == menu_channel){
@@ -800,6 +821,14 @@ default
                     start_loading_notecard();
                 } else if ("Reset Prims" == msg){
                     init();
+                    dlg_main(id);
+                } else if ("Skip [on]off" == msg){
+                    skip_spaces = FALSE;
+                    do_layout(text);
+                    dlg_main(id);
+                } else if ("Skip on[off]" == msg){
+                    skip_spaces = TRUE;
+                    do_layout(text);
                     dlg_main(id);
                 } else if ("White" == msg){
                     llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
@@ -908,6 +937,7 @@ default
                 typefaces_total_pages = divide_and_round_up(num_fonts, 9); // 9 is the number of fonts to display each page, after subtracting the 3 navigation buttons
 
                 say((string)["Loaded ", num_fonts, " fonts."], 2);
+                say((string)["Free Memory: ",llGetFreeMemory()], 2);
                 llSetText((string)[""],float_text_color, float_text_alpha);
 
                 //llOwnerSay(llList2CSV(typefaces));
@@ -918,13 +948,15 @@ default
         } else if (nc_do == NC_READ_FONT_HEADER){
             llSetText((string)["Reading Font ", _typeface_name], float_text_color, float_text_alpha);
             //set up temporary variables
-            _tex = ""; //required.
-            _chars="";
-            _extents = []; //required.
-            _em = 50;
-            _columns = 10;
-            _rows = 10;
-            _bump = 0;
+            tex = ""; //required.
+            chars="";
+            extents = []; //required.
+            em = 50;
+            columns = 10;
+            rows = 10;
+            bump = 0;
+            t_width = 512;
+            t_height = 512;
             
             //TODO verify that we're reading the right section and the notecard was not edited
             nc_do = NC_READ_FONT_DEF;
@@ -952,62 +984,74 @@ default
                 notecard_attr_end(nc_what);
                 nc_do = NC_DO_NOTHING;
                 
-                if (_tex == ""){ //required.
+                if (tex == ""){ //required.
                     //llSay(DEBUG_CHANNEL, "missing texture name in Font definition for [] ");
-                    _tex = _typeface_name;
+                    tex = _typeface_name;
                 }; 
-                tex = _tex;
+                //tex = _tex;
                 
-                if (_em <= 0 ){ // must be positive.
+                if (em <= 0 ){ // must be positive.
                     llSay(DEBUG_CHANNEL, "character cell size is not a positive integer in Font definition for [] ");
-                    _em = 50;
+                    em = 50;
                 }
-                em = _em;
+                //em = _em;
                 
-                if (_columns <= 0 ){ // must be positive.
+                if (columns <= 0 ){ // must be positive.
                     llSay(DEBUG_CHANNEL, "number of columns must be larger than zero in Font definition for [] ");
-                    _columns = 10;
+                    columns = 10;
                 } 
-                columns = _columns;
+                //columns = _columns;
                 
-                if (_rows <= 0 ){ // must be positive.
+                if (rows <= 0 ){ // must be positive.
                     llSay(DEBUG_CHANNEL, "number of rows must be larger than zero in Font definition for [] ");
-                    _rows = 10;
+                    rows = 10;
                 } 
-                rows = _rows;
+                //rows = _rows;
                 
-                if (_chars == ""){
-                    _chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         ";                    
+                if (t_width <= 0 ){ // must be positive.
+                    llSay(DEBUG_CHANNEL, "texture width must be larger than zero in Font definition for [] ");
+                    t_width = 512;
+                } 
+                //t_width = _t_width;
+                
+                if (t_height <= 0 ){ // must be positive.
+                    llSay(DEBUG_CHANNEL, "texture height must be larger than zero in Font definition for [] ");
+                    t_height = 512;
+                } 
+                //t_height = _t_height;
+                
+                if (chars == ""){
+                    chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         ";                    
                 }
                 
                 integer cells = columns * rows;
                 
                 //if (llStringLength(_chars) != llGetListLength(_extents) && cells != llGetListLength(_extents))
-                if( FALSE ){
-                    llSay(DEBUG_CHANNEL, "number of character data is diferent from the number of characters in Font definition for [] ");
-                }
+                //if( FALSE ){
+                    //llSay(DEBUG_CHANNEL, "number of character data is diferent from the number of characters in Font definition for [] ");
+                //}
                 //comprensate for trimmed spaces
                 integer i;
                 
-                integer num_spaces = cells - llStringLength(_chars);
+                integer num_spaces = cells - llStringLength(chars);
                 string spaces = "";
                 for (i = 0; i < num_spaces; i++){
                     spaces += " ";
                 }
-                chars = _chars + spaces;
+                chars = chars + spaces;
                 
-                if (llGetListLength(_extents) == 0){
+                if (llGetListLength(extents) == 0){
                     llSay(DEBUG_CHANNEL, "you need to supply the widths of characters in Font definition for [] ");
-                    _extents = [13];
+                    extents = [13];
                 }
                 
-                num_spaces = cells - llGetListLength(_extents);
+                num_spaces = cells - llGetListLength(extents);
                 for (i = 0; i < num_spaces; i++){
-                    _extents += llList2Integer(_extents, 0);
+                    extents += llList2Integer(extents, 0);
                 }
-                extents = _extents;
+                //extents = _extents;
                 
-                bump = _bump;
+                //bump = _bump;
                 
                 //Debug: Show the data.
                 //llOwnerSay(chars);
@@ -1018,7 +1062,9 @@ default
                 
                 dirty = 32767;
                 
+                say((string)["Free Memory: ",llGetFreeMemory()], 2);
                 do_layout(text);
+                say((string)["Free Memory: ",llGetFreeMemory()], 2);
                 //if nobody else have touched the menu, re-show the menu
         
                 dlg_fonts (operator_id);
@@ -1048,3 +1094,4 @@ default
         }
     }
 }
+
