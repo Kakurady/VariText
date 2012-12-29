@@ -10,8 +10,8 @@ float height = 0.2; // height of display
 integer listen_channel = 12; //channel on which script listens
 integer menu_channel = -9013;
 
-integer verbose = 32;
-integer say_to_owner = FALSE;
+integer verbose = 0;
+integer say_to_owner = TRUE;
 
 integer centered = TRUE; //center the text on the board instead of starting from the left-top
 integer skip_spaces = TRUE;
@@ -141,7 +141,7 @@ dlg_main(key avatar){
     } else {
         skipopt = "Skip on[off]";
     }
-    list l = ["Fonts","Reset Prims", "Reload Fonts", "Access", "White", "Black", skipopt];
+    list l = ["Fonts","Reset Prims", "Reload Fonts", "Access", "White Text", "Black Text", skipopt];
     llDialog(
         avatar,
         (string)[
@@ -298,7 +298,7 @@ notecard_attr_line(string what, string value){
         chars = chars + value;
         llOwnerSay(chars);
     } else if (what == "extents" || what == "aw"){
-        list parsed = llParseString2List(value , [",", " "], ["(", ")", "[", "]"]);
+        list parsed = llParseString2List(value , [",", " "], []);
         list converted = [];
         integer i;
         for (i = 0; i < llGetListLength(parsed); i++){
@@ -666,10 +666,12 @@ do_layout(string input){
             ;
             
             vector offset_l = getGridOffset(l) + <(0.5 - cut_end) * repeat_l + (float)x_l / 2 / t_width, 0, 0> + <(float)(sp_post_l) / em / 2 * repeat_l, 0, 0>;
-            vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / t_width, 0, 0> + <(float)(sp_post_m - sp_pre_m)/ em * repeat_m, 0, 0>;;
+            //vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / t_width, 0, 0> + <(float)(sp_post_m - sp_pre_m )/ em * repeat_m, 0, 0>;;
+            vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / t_width, 0, 0> + <(float)(sp_post_m - sp_pre_m )/ 2 / t_width, 0, 0>;;
             vector offset_n = getGridOffset(n) - <(hollow / 2 - 0.5) * repeat_n, 0, 0> ;//-  <(float)(sp_post_n - sp_pre_n)/em / 2 * repeat_n, 0, 0>;
             //llOwnerSay((string)[getGridOffset(n), <(0.5 - hollow / 2), 0, 0>, offset_n]);
-            vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / t_width, 0, 0> + <(float)(sp_post_o - sp_pre_o)/em * repeat_o, 0, 0>;
+            //vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / t_width, 0, 0> + <(float)(sp_post_o - sp_pre_o)/em * repeat_o, 0, 0>;
+            vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / t_width, 0, 0> + <(float)(sp_post_o - sp_pre_o)/ 2 / t_width, 0, 0>;
             vector offset_p = getGridOffset(p) - <(cut_begin - 0.5) * repeat_p + (float)x_p / 2 / t_width, 0, 0> + <(float)(- sp_pre_p)/em / 2 * repeat_p, 0, 0>;
             //llOwnerSay((string) [repeat_l, " ",repeat_o, offset_l, offset_o]);
             
@@ -706,15 +708,16 @@ do_layout(string input){
 
     }
     //pad everything with spaces from here
-            vector space_rpt = <(float)em/t_width, (float)em/t_height, 0.0> / 2.0;
-    for(j=i; j< prims && j< dirty; j++){
-
-    llSetLinkPrimitiveParamsFast(j+1,[PRIM_TEXTURE, ALL_SIDES, tex, space_rpt, <-0.45,0.45,0>, 0.0,
+            list clean_up =[
+    PRIM_TEXTURE, ALL_SIDES, tex, <1.0/(float)columns, 1.0/(float)rows, 0.0>, <-0.5+(1.0/(float)columns)/2.0, 0.5-(1.0/(float)rows)/2.0, 0>, 0.0,
     PRIM_POSITION,ZERO_VECTOR,
     PRIM_TYPE, PRIM_TYPE_BOX, PRIM_HOLE_DEFAULT, 
-                <0, 1, 0>, 0, <0.25, 0.25, 0.0 >, 
+            <0, 1, 0>, 0, <0.25, 0.25, 0.0 >, 
             <1.0, 1.0, 0>,
-            <0.0, 0.0, 0> ]);
+            <0.0, 0.0, 0> ];
+            
+    for(j=i; j< prims && j< dirty; j++){
+        llSetLinkPrimitiveParamsFast(j+1,clean_up);
     }
     dirty = i;
     llSetLinkPrimitiveParamsFast(LINK_ROOT,[PRIM_SIZE, <scale*((float)x_line/(float)em+0.2),0.010, scale*((float)line+0.2)>]);
@@ -740,7 +743,7 @@ integer todex2(string input, integer pos, integer limit){
 }
 init(){
         llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
-        PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45, 0.45,0>, 0.0,
+        PRIM_TEXTURE, ALL_SIDES, tex, <1.0/(float)columns, 1.0/(float)rows, 0.0>, <-0.5+(1.0/(float)columns)/2.0, 0.5-(1.0/(float)rows)/2.0, 0>, 0.0,
         PRIM_SIZE, <(float)scale*1.2, 0.01,scale>,
         PRIM_NAME, ""
         ]);
@@ -752,12 +755,12 @@ default
     //displahy some test words, and start listening
     state_entry()
     {
-        say((string)["Free Memory: ",llGetFreeMemory()], 1);
-        do_layout("The quick brown fox jumps over a lazy dog.");
+        say((string)["Free Memory: ",llGetFreeMemory()], 2);
+        do_layout("2 + 2 = 4");
         if (num_fonts < 1){ start_loading_notecard();}
         llListen(menu_channel, "", NULL_KEY, "");
         llListen(listen_channel, "","","");
-        say((string)["Free Memory: ",llGetFreeMemory()], 1);
+        say((string)["Free Memory: ",llGetFreeMemory()], 2);
     }
     touch_start(integer total_number)
     {
@@ -830,12 +833,12 @@ default
                     skip_spaces = TRUE;
                     do_layout(text);
                     dlg_main(id);
-                } else if ("White" == msg){
+                } else if ("White Text" == msg){
                     llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
                     PRIM_COLOR, ALL_SIDES, <1, 1, 1>, 1.0
                     ]);
                     dlg_main(id);
-                } else if ("Black" == msg){
+                } else if ("Black Text" == msg){
                     llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
                     PRIM_COLOR, ALL_SIDES, <0, 0, 0>, 1.0
                     ]);
@@ -1060,7 +1063,8 @@ default
                 
                 llSetText("", float_text_color, float_text_alpha);
                 
-                dirty = 32767;
+                //dirty = 32767;
+                init();
                 
                 say((string)["Free Memory: ",llGetFreeMemory()], 2);
                 do_layout(text);
