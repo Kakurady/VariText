@@ -89,6 +89,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 (While not required by the license, I would appreciate any feedback, even if it's just saying you've used the script somewhere. Thanks!)
 
+Fonts are copyright their owners and are avaliable under their own licenses.
+
 Changelog
 ---------
 
