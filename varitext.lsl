@@ -1,7 +1,7 @@
 //(c) Kakurady 2010, 2011, 2012.
 //Includes portions dedicated to the public domain by Nexii Malthus.
 
-string version = "20120713\nSet text on channel 12";
+string version = "20120902\nSet text on channel 12";
 
 //----- Behaviour -----//
 float scale=0.1; // height of line
@@ -119,6 +119,15 @@ warn(string message) {
 }
 note(string message) {say(message, 1);}
 debug(string message) {say(message, 3);}
+
+integer UTF8Length(string msg)
+{
+//Returns the number of BYTES a string will have when converted to UTF8 by communication functions
+//Simple and efficient!
+//Released to the public domain by kimmie Loveless
+    integer rNum = llStringLength(msg);
+    return rNum + ((llStringLength(llEscapeURL(msg)) - rNum)/4);
+}
 //-------Menu System-------//
 integer divide_and_round_up(integer nom, integer dem){
     if(nom % dem){
@@ -862,6 +871,16 @@ default
             nc_do = NC_INIT;
         } else if (nc_do == NC_INIT){
             if (data != EOF){
+                integer bytelength = UTF8Length(data);
+                
+                if(bytelength >= 240 ){
+                    if(llGetSubString(data, 0, 0) != "#"){
+                        warn((string)["line ", nc_line + 1, " is ", bytelength, " bytes long.\n", 
+                        "When read by a script, notecards lines longer than 255 bytes are cut off by Second Life. \n",
+                        "This may cause some settings to load incorrectly."  ]);
+                    }
+                }
+                
                 if(llGetSubString(data, 0, 0) == "["){
                     integer closing_bracket = llSubStringIndex(data, "]");
                     if (closing_bracket != -1) {
