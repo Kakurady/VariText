@@ -18,11 +18,9 @@ integer skip_spaces = TRUE;
 
 string nc_name = "metrics"; //name of font notecard
 
-integer access_enabled = FALSE;
-////integer access_group = 0; //level 1 can change text, level 2 can access menu
-////integer access_public = 0; //
-integer access_public = 9013; //
-integer access_group = 38; //level 1 can change text, level 2 can access menu
+integer access_enabled = TRUE;
+integer access_public = 1; //
+integer access_group = 2; //level 1 can change text, level 2 can access menu
 integer access_applied_to_objects = FALSE;
 
 vector float_text_color = <1, 1, 1>;
@@ -141,7 +139,7 @@ dlg_main(key avatar){
     } else {
         skipopt = "Skip on[off]";
     }
-    list l = ["Fonts","Reset Prims", "Reload Fonts", "Access", "White Text", "Black Text", skipopt];
+    list l = ["Fonts", "Access", "Setup", skipopt];
     llDialog(
         avatar,
         (string)[
@@ -205,11 +203,17 @@ dlg_access(key avatar){
     
     llDialog(
         avatar,
-        (string)[
         "\n› Access\n",
-        "The access menu is not yet implemented."],
         //["■ Home", "▶Public Off", "Public On", "Group Off", "Group On", "Group Menu"],
         buttons,
+        menu_channel
+    );
+}
+dlg_setup(key avatar){
+    llDialog(
+        avatar,
+        "\n› Setup\n",
+        ["■ Home", "Reset Prims", "Reload Fonts", "White Text", "Black Text"],
         menu_channel
     );
 }
@@ -296,9 +300,8 @@ notecard_attr_first_line(string what, string value){
 notecard_attr_line(string what, string value){
     if (what == "chars") {
         chars = chars + value;
-        llOwnerSay(chars);
     } else if (what == "extents" || what == "aw"){
-        list parsed = llParseString2List(value , [",", " "], []);
+        list parsed = llParseString2List(value , [",", " "], ["(", ")", "[", "]"]);
         list converted = [];
         integer i;
         for (i = 0; i < llGetListLength(parsed); i++){
@@ -756,7 +759,7 @@ default
     state_entry()
     {
         say((string)["Free Memory: ",llGetFreeMemory()], 2);
-        do_layout("2 + 2 = 4");
+        do_layout("The quick brown fox jumps over a lazy dog.");
         if (num_fonts < 1){ start_loading_notecard();}
         llListen(menu_channel, "", NULL_KEY, "");
         llListen(listen_channel, "","","");
@@ -820,11 +823,14 @@ default
                 }
                 else if ("Access" == msg){
                     dlg_access(id);
+                }
+                else if ("Setup" == msg){
+                    dlg_setup(id);
                 } else if ("Reload Fonts" == msg){
                     start_loading_notecard();
                 } else if ("Reset Prims" == msg){
                     init();
-                    dlg_main(id);
+                    dlg_setup(id);
                 } else if ("Skip [on]off" == msg){
                     skip_spaces = FALSE;
                     do_layout(text);
@@ -837,12 +843,12 @@ default
                     llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
                     PRIM_COLOR, ALL_SIDES, <1, 1, 1>, 1.0
                     ]);
-                    dlg_main(id);
+                    dlg_setup(id);
                 } else if ("Black Text" == msg){
                     llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
                     PRIM_COLOR, ALL_SIDES, <0, 0, 0>, 1.0
                     ]);
-                    dlg_main(id);
+                    dlg_setup(id);
                 } else if ("Group Off" == msg){
                     access_group = ACCESS_NONE;
                     say("Group access is now off.", 1);
