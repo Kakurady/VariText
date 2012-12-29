@@ -1,20 +1,28 @@
 //(c) Kakurady 2010, 2011, 2012.
 //Includes portions dedicated to the public domain by Nexii Malthus.
 
-
-string version = "20120620";
+string version = "20120713\nSet text on channel 12";
 
 //----- Behaviour -----//
 float scale=0.1; // height of line
 float line_width = 1.5; //width of line
-float height = 0.2;
+float height = 0.2; // height of display
 integer listen_channel = 12; //channel on which script listens
 integer menu_channel = -9013;
 
+integer verbose = 0;
+integer say_to_owner = TRUE;
+
 integer centered = TRUE; //center the text on the board instead of starting from the left-top
 
-//Settings
-string nc_name = "metrics";
+string nc_name = "metrics"; //name of font notecard
+
+integer access_enabled = FALSE;
+////integer access_group = 0; //level 1 can change text, level 2 can access menu
+////integer access_public = 0; //
+integer access_public = 9013; //
+integer access_group = 38; //level 1 can change text, level 2 can access menu
+integer access_applied_to_objects = FALSE;
 
 vector float_text_color = <1, 1, 1>;
 float  float_text_alpha = 1;
@@ -23,7 +31,7 @@ string nc_progress_bar = " ▏▎▍▌▋▊▉█";
 list nc_progress_bar_l = ["░","▏","▎","▍","▌","▋","▊","▉","█"];
 integer nc_progress_bar_length = 8;
 
-//----- Font definition -----//
+//----- Default Font definition -----//
 string tex="droid serif 1"; //name or uuid of texture
 string chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         "; //list of characters in order of in texture
 list extents=[13, 17, 20, 28, 28, 45, 37, 11, 17, 17, 25, 28, 13, 16, 14, 14, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 14, 13, 28, 28, 28, 25, 46, 35, 33, 31, 36, 31, 30, 36, 40, 18, 18, 35, 31, 47, 38, 37, 30, 37, 33, 27, 31, 36, 34, 52, 33, 31, 30, 18, 14, 18, 28, 23, 29, 28, 31, 25, 31, 27, 18, 27, 32, 16, 15, 29, 16, 47, 32, 29, 31, 31, 24, 23, 18, 32, 29, 43, 29, 28, 26, 21, 28, 21, 28, 13, 13, 13, 13, 13]; //width of each, as a fraction defined by em below
@@ -73,44 +81,44 @@ string _typeface_name = "";
 integer nc_type_start_line = 0;
 integer nc_type_end_line = 0;
 
-
 //menu states
 //integer PAGE_HOME = 0;
 //integer PAGE_FONT_FAMILIES = 1;
 integer last_page = 0;
 
-/* list typefaces = ["Arial", 
-"Bitstream Charter", 
-"Cantarell", 
-"Comic Sans MS", 
-"Courier New", 
-"DejaVu Sans", 
-"DejaVu Sans Mono", 
-"DejaVu Serif", 
-"Droid Sans", 
-"Droid Sans Mono", 
-"Droid Serif", 
-"eurofurence", 
-"eurofurence classic", 
-"Georgia", 
-"HandelGotD", 
-"Impact", 
-"Liberation Mono", 
-"Liberation Sans", 
-"NanumGothic", 
-"NanumMyeongjo", 
-"Nekotoba", 
-"Nekotoba2", 
-"Purisa", 
-"Sawasdee"];
-*/
 integer num_fonts = 0;
 integer typefaces_page = 0;
 integer typefaces_total_pages = 0;
 
 key operator_id = NULL_KEY;
 
+integer ACCESS_NONE = 0;
+integer ACCESS_WRITE = 1;
+integer ACCESS_MENU = 2;
 
+string ACCESS_INDICATOR = "• ";
+//string ACCESS_INDICATOR = "";
+
+say(string message, integer verbosity){
+    if (verbose >= verbosity){
+        if (say_to_owner){
+            llOwnerSay(message);
+        } else {
+            llSay(PUBLIC_CHANNEL, message);
+        }
+    }
+}
+warn(string message) {
+    if (verbose >= 0){
+        if (say_to_owner){
+            llOwnerSay(message);
+        } else {
+            llSay(DEBUG_CHANNEL, message);
+        }
+    }
+}
+note(string message) {say(message, 1);}
+debug(string message) {say(message, 3);}
 //-------Menu System-------//
 integer divide_and_round_up(integer nom, integer dem){
     if(nom % dem){
@@ -170,12 +178,32 @@ dlg_fonts(key avatar){
     }
 }
 dlg_access(key avatar){
+    list buttons = ["■ Home"];
+    if (access_public == ACCESS_NONE){
+        buttons = buttons + [ACCESS_INDICATOR + "Public Off", "Public On"];
+    } else if (access_public == ACCESS_WRITE){
+        buttons = buttons + ["Public Off", ACCESS_INDICATOR + "Public On"];
+    } else {
+        buttons = buttons + ["Public Off", "Public On"];
+    }
+    
+    if (access_group == ACCESS_NONE){
+        buttons = buttons + [ACCESS_INDICATOR + "Group Off", "Group On", "Group Menu"];
+    } else if (access_group == ACCESS_WRITE){
+        buttons = buttons + ["Group Off", ACCESS_INDICATOR + "Group On", "Group Menu"];
+    } else if (access_group == ACCESS_MENU){
+        buttons = buttons + ["Group Off", "Group On", ACCESS_INDICATOR + "Group Menu"];
+    } else {
+        buttons = buttons + ["Group Off", "Group On", "Group Menu"];
+    }
+    
     llDialog(
         avatar,
         (string)[
         "\n› Access\n",
         "The access menu is not yet implemented."],
-        ["■ Home"],
+        //["■ Home", "▶Public Off", "Public On", "Group Off", "Group On", "Group Menu"],
+        buttons,
         menu_channel
     );
 }
@@ -272,6 +300,22 @@ notecard_attr_line(string what, string value){
 notecard_attr_end(string what){
 }
 
+integer check_access(key id, integer level){
+    if (access_enabled == FALSE) {return TRUE;}
+    if (id == llGetOwner())  {return TRUE;}
+    if (llSameGroup(id) && level <= access_group) {return TRUE;}
+    if (level <= access_public) {return TRUE;}
+    if (access_applied_to_objects){
+        list l = llGetObjectDetails(id, [OBJECT_OWNER,OBJECT_GROUP]);
+        if (llList2Key(l, 0) == llGetOwner()) {return TRUE;}
+        //whether the object is owned by someone from the same 
+        //group is not checked, because that information isnot avaliable
+        // when that person is not in the region. This only checks if
+        //the object is deeeded to the same group.
+        if (llSameGroup(llList2Key(l, 1)) && level <= access_group) {return TRUE;}
+    }
+    return FALSE;
+}
 //----- Actual program starts here -----//
 
 //Returns the actual texture coordinates from character index.
@@ -649,7 +693,7 @@ do_layout(string input){
     llSetLinkPrimitiveParamsFast(j+1,[PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45,0.45,0>, 0.0]);
     }
     dirty = i;
-    llSetLinkPrimitiveParamsFast(0,[PRIM_SIZE, <scale*((float)x_line/(float)em+0.2),0.010, scale*((float)line+0.2)>]);
+    llSetLinkPrimitiveParamsFast(LINK_ROOT,[PRIM_SIZE, <scale*((float)x_line/(float)em+0.2),0.010, scale*((float)line+0.2)>]);
 }
 
 //Find the location of a character in string in the texture (which square is it occupying).
@@ -683,7 +727,7 @@ default
     //displahy some test words, and start listening
     state_entry()
     {
-        llSay(0, "Hello, Avatar!");
+        say("Hello, Avatar!", 1);
         do_layout("The quick brown fox jumps over a lazy dog.");
         if (num_fonts < 1){ start_loading_notecard();}
         llListen(menu_channel, "", NULL_KEY, "");
@@ -709,70 +753,97 @@ default
     //text chat event
     listen(integer channel, string name, key id, string msg){
         if (channel == listen_channel){
-            llOwnerSay(name);
-            //llOwnerSay(msg);
-            do_layout(msg);
+            if (check_access(id, ACCESS_WRITE)){
+                llOwnerSay(name);
+                //llOwnerSay(msg);
+                do_layout(msg);
+            }
         } 
         else if (channel == menu_channel){
-            if (operator_id != id){
-                operator_id = NULL_KEY;
-            }
-            
-            //TODO: Seperate out processing for each menu.
-            if ("■ Home" == msg){
-                dlg_main(id);
-            } 
-            else if ("◀ Prev" == msg){
-                typefaces_page -=1;
-                if (typefaces_page < 0){typefaces_page = typefaces_total_pages - 1;}
-                dlg_fonts(id);
-            }
-            else if ("▶ Next" == msg){
-                typefaces_page +=1;
-                if (typefaces_page >= typefaces_total_pages){typefaces_page = 0;}
-                dlg_fonts(id);
-            } 
-            else if ("□" == msg){
-                dlg_fonts(id);
-            } 
-            else if ("Fonts" == msg){
-                dlg_fonts(id);
-            }
-            else if ("Access" == msg){
-                dlg_access(id);
-            } else if ("Reload Fonts" == msg){
-                start_loading_notecard();
-            } else if ("Reset Prims" == msg){
-                init();
-                dlg_main(id);
-            } else if ("White" == msg){
-        llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
-        PRIM_COLOR, ALL_SIDES, <1, 1, 1>, 1.0
-        ]);
-                dlg_main(id);
-            } else if ("Black" == msg){
-        llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
-        PRIM_COLOR, ALL_SIDES, <0, 0, 0>, 1.0
-        ]);
-                dlg_main(id);
-            }else {
-                integer i;
-                for (i = 0; i < num_fonts; i++){
-                    if (llList2String(typefaces, i) == msg){
-                        //TODO: Test if avatar and if in region.
-                        list noti = ["Font has changed to ", msg ,", which is number ", i, " on line ", llList2Integer(typefaces_index, i)];
-                        //llInstantMessage(id, (string)noti);
-                        //llRegionSayTo(id, PUCLIC_CHANNEL noti)
-                        llSay(PUBLIC_CHANNEL, (string) noti);
-                        
-                        //dlg_fonts(id);
-                        operator_id = id;
-                        nc_do = NC_READ_FONT_HEADER;
-                        _typeface_name = llList2String(typefaces, i);
-                        
-                        nc_line = llList2Integer(typefaces_index, i);
-                        llGetNotecardLine(nc_name, nc_line);
-                        return;
+            if (check_access(id, ACCESS_MENU)){
+                if (operator_id != id){
+                    operator_id = NULL_KEY;
+                }
+                
+                //TODO: Seperate out processing for each menu.
+                if ("■ Home" == msg){
+                    dlg_main(id);
+                } 
+                else if ("◀ Prev" == msg){
+                    typefaces_page -=1;
+                    if (typefaces_page < 0){typefaces_page = typefaces_total_pages - 1;}
+                    dlg_fonts(id);
+                }
+                else if ("▶ Next" == msg){
+                    typefaces_page +=1;
+                    if (typefaces_page >= typefaces_total_pages){typefaces_page = 0;}
+                    dlg_fonts(id);
+                } 
+                else if ("□" == msg){
+                    dlg_fonts(id);
+                } 
+                else if ("Fonts" == msg){
+                    dlg_fonts(id);
+                }
+                else if ("Access" == msg){
+                    dlg_access(id);
+                } else if ("Reload Fonts" == msg){
+                    start_loading_notecard();
+                } else if ("Reset Prims" == msg){
+                    init();
+                    dlg_main(id);
+                } else if ("White" == msg){
+                    llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
+                    PRIM_COLOR, ALL_SIDES, <1, 1, 1>, 1.0
+                    ]);
+                    dlg_main(id);
+                } else if ("Black" == msg){
+                    llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
+                    PRIM_COLOR, ALL_SIDES, <0, 0, 0>, 1.0
+                    ]);
+                    dlg_main(id);
+                } else if ("Group Off" == msg){
+                    access_group = ACCESS_NONE;
+                    say("Group access is now off.", 1);
+                    dlg_access(id);
+                } else if ("Group On" == msg){
+                    access_group = ACCESS_WRITE;
+                    note ("Group members can now change messages.");
+                    dlg_access(id);
+                } else if ("Group Menu" == msg){
+                    access_group = ACCESS_MENU;
+                    note( "Group members can now access the menu.");
+                    dlg_access(id);
+                } else if ("Public Off" == msg){
+                    access_public = ACCESS_NONE;
+                    note("Public access is now off.");
+                    dlg_access(id);
+                } else if ("Public On" == msg){
+                    access_public = ACCESS_WRITE;
+                    note("Any person can now change messages.");
+                    dlg_access(id);
+                } else if (llGetSubString(msg, 0, llStringLength(ACCESS_INDICATOR) - 1) == ACCESS_INDICATOR) {
+                    note("Access settings NOT changed.");
+                    dlg_access(id);
+                } else {
+                    integer i;
+                    for (i = 0; i < num_fonts; i++){
+                        if (llList2String(typefaces, i) == msg){
+                            //TODO: Test if avatar and if in region.
+                            list noti = ["Selected font", msg , ".\n Now Loading..."];
+                            //llInstantMessage(id, (string)noti);
+                            //llRegionSayTo(id, PUCLIC_CHANNEL noti)
+                            note((string) noti);
+                            
+                            //dlg_fonts(id);
+                            operator_id = id;
+                            nc_do = NC_READ_FONT_HEADER;
+                            _typeface_name = llList2String(typefaces, i);
+                            
+                            nc_line = llList2Integer(typefaces_index, i);
+                            llGetNotecardLine(nc_name, nc_line);
+                            return;
+                        }
                     }
                 }
             }
@@ -817,7 +888,7 @@ default
                 num_fonts = llGetListLength(typefaces);
                 typefaces_total_pages = divide_and_round_up(num_fonts, 9); // 9 is the number of fonts to display each page, after subtracting the 3 navigation buttons
 
-                llSay(PUBLIC_CHANNEL, (string)["End of notecard reached, found ", num_fonts, " fonts."]);
+                say((string)["Loaded ", num_fonts, " fonts."], 2);
                 llSetText((string)[""],float_text_color, float_text_alpha);
 
                 //llOwnerSay(llList2CSV(typefaces));
@@ -834,7 +905,7 @@ default
             _em = 50;
             _columns = 10;
             _rows = 10;
-            _bump = -0.01;
+            _bump = 0;
             
             //TODO verify that we're reading the right section and the notecard was not edited
             nc_do = NC_READ_FONT_DEF;
@@ -926,10 +997,7 @@ default
                 
                 llSetText("", float_text_color, float_text_alpha);
                 
-                llSetLinkPrimitiveParams(LINK_ALL_CHILDREN, [
-        PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45, 0.45,0>, 0.0,
-        PRIM_SIZE, <(float)scale*1.2, 0.01,scale>
-        ]);
+                dirty = 32767;
                 
                 do_layout(text);
                 //if nobody else have touched the menu, re-show the menu
