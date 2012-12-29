@@ -1,20 +1,20 @@
 //----- Behaviour -----//
 float scale=0.1; // height of line
 float line_width = 1.5; //width of line
+float height = 0.2;
 integer listen_channel = 12; //channel on which script listens
 
 integer centered = TRUE; //center the text on the board instead of starting from the left-top
 
 //----- Font definition -----//
-string tex="nekotoba2 (no shadow)"; //name or uuid of texture
+string tex="droid serif 1"; //name or uuid of texture
 string chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         "; //list of characters in order of in texture
-//list extents=[13, 17, 20, 28, 28, 45, 37, 11, 17, 17, 25, 28, 13, 16, 14, 14, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 14, 13, 28, 28, 28, 25, 46, 35, 33, 31, 36, 31, 30, 36, 40, 18, 18, 35, 31, 47, 38, 37, 30, 37, 33, 27, 31, 36, 34, 52, 33, 31, 30, 18, 14, 18, 28, 23, 29, 28, 31, 25, 31, 27, 18, 27, 32, 16, 15, 29, 16, 47, 32, 29, 31, 31, 24, 23, 18, 32, 29, 43, 29, 28, 26, 21, 28, 21, 28, 13, 13, 13, 13, 13]; //width of each, as a fraction defined by em below
-list extents=[15, 12, 17, 39, 28, 37, 25, 10, 14, 14, 19, 35, 12, 21, 21, 23, 27, 13, 26, 27, 30, 29, 25, 25, 27, 24, 13, 12, 22, 31, 23, 17, 41, 31, 27, 30, 33, 30, 26, 37, 32, 12, 18, 26, 28, 47, 35, 37, 31, 35, 24, 34, 34, 30, 38, 39, 34, 31, 36, 19, 25, 19, 22, 35, 25, 24, 24, 22, 25, 24, 23, 23, 21, 10, 14, 22, 11, 28, 25, 22, 21, 25, 22, 22, 25, 22, 24, 30, 22, 27, 26, 15, 11, 16, 30, 15, 15, 15, 15, 15];
+list extents=[13, 17, 20, 28, 28, 45, 37, 11, 17, 17, 25, 28, 13, 16, 14, 14, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 14, 13, 28, 28, 28, 25, 46, 35, 33, 31, 36, 31, 30, 36, 40, 18, 18, 35, 31, 47, 38, 37, 30, 37, 33, 27, 31, 36, 34, 52, 33, 31, 30, 18, 14, 18, 28, 23, 29, 28, 31, 25, 31, 27, 18, 27, 32, 16, 15, 29, 16, 47, 32, 29, 31, 31, 24, 23, 18, 32, 29, 43, 29, 28, 26, 21, 28, 21, 28, 13, 13, 13, 13, 13]; //width of each, as a fraction defined by em below
 integer em = 50; //font width divider
 integer columns = 10; //number of columns in texture
 integer rows = 10; //number of row in texture
-//float bump = -0.01; //some fonts needs some adjustment vertically
-float bump = 0.0;
+float bump = -0.01; //some fonts needs some adjustment vertically
+//float bump = 0.0;
 
 //----- Some internal stuff -----//
 integer LINE_LIST_STRIDE = 3; //how many list items does one line properities occupy
@@ -221,6 +221,7 @@ do_layout(string input){
     list lines = do_line_wrapping(input);
     integer num_lines = llGetListLength(lines) / LINE_LIST_STRIDE;
     integer line;
+    integer x_line = 0;
     
     integer len = llStringLength(input);
     integer prims = llGetNumberOfPrims();
@@ -231,21 +232,25 @@ do_layout(string input){
     float last_right = 0.0; 
     float this_left = 0.0;
     float first_left= line_width / 2;
-    vector posvec = <-first_left, -0.02, 0.05>;
+    vector posvec = <-first_left, -0.02, 0>;
 
     //rotation down = llEuler2Rot(<PI_BY_TWO, 0, 0>);
     rotation down = ZERO_ROTATION;
     
     //center text vertically
     //TODO: don't hardcode number of lines
-    if (centered && num_lines < 2){
-        posvec.z -= scale / 2;
+    if (centered){
+        posvec.z = (float )(num_lines - 1)/ 2 * scale;
+    } else {
+        posvec.z =  (height - scale) / 2;
     }
     //todo separate prims and char pointer so spaces can be represented without prims
     //todo switch between starting on 0th prim and 1st prim based on if backing board is present
     for (i = 1, line = 0; i < prims && line < num_lines; line++){
         integer cur_line_begin = llList2Integer(lines, line * LINE_LIST_STRIDE);
         integer cur_line_end   = llList2Integer(lines, line * LINE_LIST_STRIDE + 1);
+        integer cur_line_width = llList2Integer(lines, line * LINE_LIST_STRIDE + 2);
+        if (x_line < cur_line_width) {x_line = cur_line_width;}
 
         if(centered){
             posvec.x = posvec.x + (line_width - (float)llList2Integer(lines, line * LINE_LIST_STRIDE + 2) * scale / em)/2;
@@ -257,6 +262,7 @@ do_layout(string input){
                 j++;
                 last_right += (float)(llList2Integer(extents, 0))/em*scale;
             }
+            integer x_sp = (llList2Integer(extents, 0));
             integer skip = 0;
             integer next = j;
             integer sp_post_l = 0;
@@ -272,28 +278,29 @@ do_layout(string input){
             
                 if (llGetSubString(input, j+1+skip, j+1+skip) == " ") {
                     skip++; next++; 
-                    sp_post_l = sp_pre_m = llList2Integer(extents, 0) / 2;
+                    sp_post_l = x_sp / 2; sp_pre_m = x_sp - sp_post_l;
                 } next++;
             integer m = todex2(input, j+1+skip, cur_line_end);
             
                 if (llGetSubString(input, j+2+skip, j+2+skip) == " ") {
                     skip++; next++; 
-                    sp_post_m = sp_pre_n = llList2Integer(extents, 0) / 2;
+                    sp_post_m = x_sp / 2; sp_pre_n = x_sp - sp_post_m;
                 } next++;
             integer n = todex2(input, j+2+skip, cur_line_end);
             
                 if (llGetSubString(input, j+3+skip, j+3+skip) == " ") {
                     skip++; next++;
-                    sp_post_n = sp_pre_o = llList2Integer(extents, 0) / 2;
+                    sp_post_n = x_sp / 2; sp_pre_o = x_sp - sp_post_n;
                 } next++;            
             integer o = todex2(input, j+3+skip, cur_line_end);
             
                 if (llGetSubString(input, j+4+skip, j+4+skip) == " ") {
                     skip++; next++;
-                    sp_post_o = sp_pre_p = llList2Integer(extents, 0) / 2;
+                    sp_post_o = x_sp / 2; sp_pre_p = x_sp - sp_post_o;
                 } next++;
             integer p = todex2(input, j+4+skip, cur_line_end);
             
+            //llOwnerSay((string)[llGetSubString(input, j, j+4+skip), " ", sp_post_l, " " , sp_pre_m, " ", sp_post_o, " ", sp_pre_p]);
             //width of chracter
             integer x_l = llList2Integer(extents, l);
             integer x_m = llList2Integer(extents, m);
@@ -308,12 +315,14 @@ do_layout(string input){
                 + sp_post_l + sp_pre_m + sp_post_m + sp_pre_n;
             integer x_right = x_n_right + x_o + x_p
                 + sp_post_n + sp_pre_o + sp_post_o + sp_pre_p;
+
             integer x_side;
             if (x_left > x_right){
                 x_side = x_left;
             } else {
                 x_side = x_right;
             }
+            //llOwnerSay((string)[x_side, " l", x_left, " ", x_l + x_m + x_n_left, " ",   sp_post_l + sp_pre_m + sp_post_m + sp_pre_n, " r",x_right, " ", x_n_right + x_o + x_p,  " ",  sp_post_n + sp_pre_o + sp_post_o + sp_pre_p]);
             integer space_before_l = space_before(l);
             integer space_after_m = space_after(m);
             integer space_before_n = space_before(n);
@@ -326,7 +335,7 @@ do_layout(string input){
             thiswidth = (float)(x_side * 2)/em*scale;
             this_left = (float)(x_left)/em*scale;
             
-            float x_hollow = (float)(sp_pre_n + x_n + sp_post_n);
+            float x_hollow = (float)sp_pre_n + x_n + sp_post_n;
             float hollow = x_hollow / 2 / x_side;
             
             float cut_end = 1.0 - (float) (x_m + x_n_left + sp_pre_m + sp_post_m + sp_pre_n ) / x_side;
@@ -342,12 +351,12 @@ do_layout(string input){
             float repeat_p = (float) x_side / 512;
             ;
             
-            vector offset_l = getGridOffset(l) + <(0.5 - cut_end) * repeat_l + (float)x_l / 2 / 512, 0, 0> + <(float)(sp_post_l) / 2 / em / columns, 0, 0>;
-            vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / 512, 0, 0> + <(float)(-sp_pre_m + sp_post_m) / 2 / em / columns, 0, 0>;
-            vector offset_n = getGridOffset(n) - <(hollow / 2 - 0.5) * repeat_n, 0, 0> + <(float)(-sp_pre_n + sp_post_n) / 2 / em / columns, 0, 0>;;
+            vector offset_l = getGridOffset(l) + <(0.5 - cut_end) * repeat_l + (float)x_l / 2 / 512, 0, 0> + <(float)(sp_post_l) / em / 2 * repeat_l, 0, 0>;
+            vector offset_m = getGridOffset(m) + <(float)(x_n_left - x_hollow_gap_left) / 2 / 512, 0, 0> + <(float)(sp_post_m - sp_pre_m)/ em * repeat_m, 0, 0>;;
+            vector offset_n = getGridOffset(n) - <(hollow / 2 - 0.5) * repeat_n, 0, 0> ;//-  <(float)(sp_post_n - sp_pre_n)/em / 2 * repeat_n, 0, 0>;
             //llOwnerSay((string)[getGridOffset(n), <(0.5 - hollow / 2), 0, 0>, offset_n]);
-            vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / 512, 0, 0> + <(float)(-sp_pre_o + sp_post_o) / 2 / em / columns, 0, 0>;;
-            vector offset_p = getGridOffset(p) - <(cut_begin - 0.5) * repeat_p + (float)x_p / 2 / 512, 0, 0> + <(float)(-sp_pre_p) / 2 / em /columns , 0, 0>;;
+            vector offset_o = getGridOffset(o) - <(float)(x_n_right - x_hollow_gap_right) / 2 / 512, 0, 0> + <(float)(sp_post_o - sp_pre_o)/em * repeat_o, 0, 0>;
+            vector offset_p = getGridOffset(p) - <(cut_begin - 0.5) * repeat_p + (float)x_p / 2 / 512, 0, 0> + <(float)(- sp_pre_p)/em / 2 * repeat_p, 0, 0>;
             //llOwnerSay((string) [repeat_l, " ",repeat_o, offset_l, offset_o]);
             
             list paramslist = [PRIM_TYPE, PRIM_TYPE_BOX, PRIM_HOLE_DEFAULT, 
@@ -361,7 +370,8 @@ do_layout(string input){
             PRIM_TEXTURE, 5, tex, <repeat_n, 0.1, 0.0> , offset_n, 0.0,
             PRIM_TEXTURE, 7, tex, <repeat_o, 0.1, 0.0> , offset_o, 0.0,
             PRIM_TEXTURE, 1, tex, <repeat_p, 0.1, 0.0> , offset_p, 0.0,
-            PRIM_SIZE, <(float)thiswidth / SQRT2, 0.01 ,scale>];
+            PRIM_SIZE, <(float)thiswidth / SQRT2, 0.01 ,scale>,
+            PRIM_NAME, llGetSubString(input, j, next)];
             //not the best idea, better trim the list when l=0
             if (i != 0){
                 posvec.x += last_right + this_left;
@@ -371,7 +381,7 @@ do_layout(string input){
             }
             llSetLinkPrimitiveParamsFast(i+1, paramslist);
             lastwidth = thiswidth;
-            last_right = (float) ( x_n_right +sp_post_n + sp_pre_o + x_o + sp_post_o + sp_pre_p + x_p) / em * scale;
+            last_right = (float) (x_n_right + x_o + x_p +sp_post_n + sp_pre_o + sp_post_o + sp_pre_p) / em * scale;
             j += skip;
         }
         
@@ -386,6 +396,7 @@ do_layout(string input){
     llSetLinkPrimitiveParamsFast(j+1,[PRIM_TEXTURE, ALL_SIDES, tex, <(float)0.1, 0.1, 0.0>, <-0.45,0.45,0>, 0.0]);
     }
     dirty = i;
+    llSetLinkPrimitiveParamsFast(0,[PRIM_SIZE, <scale*((float)x_line/(float)em+0.2),0.010, scale*((float)line+0.2)>]);
 }
 
 //Find the location of a character in string in the texture (which square is it occupying).
@@ -426,9 +437,9 @@ default
     }
     //text chat event
     listen(integer channel, string name, key id, string msg){
+        llOwnerSay(name);
+        llOwnerSay(msg);
         do_layout(msg);
     }
-    touch_start(integer num_detected){
-        llSay(0, (string)["Instructions: type /", listen_channel," <whatever you want> to change the text on the board."]);
-    }
 }
+
