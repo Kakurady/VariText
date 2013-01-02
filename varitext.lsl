@@ -310,7 +310,7 @@ notecard_attr_line(string what, string value){
     if (what == "chars") {
         chars = chars + value;
     } else if (what == "extents" || what == "aw"){
-        list parsed = llParseString2List(value , [",", " "], ["(", ")", "[", "]"]);
+        list parsed = llParseString2List(value , [",", " ", "(", ")", "[", "]"], []);
         list converted = [];
         integer i;
         for (i = 0; i < llGetListLength(parsed); i++){
