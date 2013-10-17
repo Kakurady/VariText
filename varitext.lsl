@@ -10,7 +10,8 @@
 //
 //Includes portions dedicated to the public domain by Nexii Malthus, kimmie Loveless and others.
 
-string version = "20120903\nSet text on channel 12";
+string version = "20131016
+\nSet text on channel 12";
 
 //----- Behaviour -----//
 float scale=0.1; // height of line
@@ -19,7 +20,7 @@ float height = 0.2; // height of display
 integer listen_channel = 12; //channel on which script listens
 integer menu_channel = -9013;
 
-integer verbose = 0;
+integer verbose = 5;
 integer say_to_owner = TRUE;
 
 integer centered = TRUE; //center the text on the board instead of starting from the left-top
@@ -41,7 +42,8 @@ integer nc_progress_bar_length = 8;
 //----- Default Font definition -----//
 string tex="droid serif 1"; //name or uuid of texture
 string chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         "; //list of characters in order of in texture
-list extents=[13, 17, 20, 28, 28, 45, 37, 11, 17, 17, 25, 28, 13, 16, 14, 14, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 14, 13, 28, 28, 28, 25, 46, 35, 33, 31, 36, 31, 30, 36, 40, 18, 18, 35, 31, 47, 38, 37, 30, 37, 33, 27, 31, 36, 34, 52, 33, 31, 30, 18, 14, 18, 28, 23, 29, 28, 31, 25, 31, 27, 18, 27, 32, 16, 15, 29, 16, 47, 32, 29, 31, 31, 24, 23, 18, 32, 29, 43, 29, 28, 26, 21, 28, 21, 28, 13, 13, 13, 13, 13]; //width of each, as a fraction defined by em below
+list extents=[13]; //width of each, as a fraction defined by em below
+string extents_packed = "14<<ME+119<-0..<<<<<<<<<<.-<<<9NCA?D?>DH22C?OFE>EA;?DBTA?>2.2<7=<?9?;2;@0/=0O@=??872@=K=<:5<5<-----";
 integer em = 50; //font width divider
 integer columns = 10; //number of columns in texture
 integer rows = 10; //number of row in texture
@@ -55,7 +57,7 @@ integer LINE_LIST_STRIDE = 3; //how many list items does one line properities oc
 
 integer dirty = 32767; //what's the highest used item on the last painting
 
-string text;
+string text = "squeak";
 
 //notecard reader states
 integer NC_DO_NOTHING = 0;
@@ -70,10 +72,10 @@ integer nc_do = 0;
 string  nc_what = "";
 
 list typefaces = []; 
-list typefaces_index = [];
+//list typefaces_index = [];
 
-list _typefaces;
-list _typefaces_index;
+//list _typefaces;
+//list _typefaces_index;
 
 string _typeface_name = "";
 //integer nc_type_start_line = 0;
@@ -94,7 +96,7 @@ integer ACCESS_NONE = 0;
 integer ACCESS_WRITE = 1;
 integer ACCESS_MENU = 2;
 
-string ACCESS_INDICATOR = "• ";
+//string ACCESS_INDICATOR = "• ";
 //string ACCESS_INDICATOR = "";
 
 say(string message, integer verbosity){
@@ -176,7 +178,7 @@ dlg_fonts(key avatar){
             (string)[
             "\n› Fonts\n", page_indicator
             ],
-            ["■ Home", "◀ Prev", "▶ Next"] + llList2List(typefaces, from, to) + padding,
+            ["■ Home", "◀ Prev", "▶ Next"] + llList2ListStrided(typefaces, from, to, 2) + padding,
             menu_channel
         );
     } else {
@@ -184,7 +186,7 @@ dlg_fonts(key avatar){
             avatar,
             (string)[
             "\n› Fonts\n"],
-            ["■ Home"] + llList2List(typefaces, 0, 10),
+            ["■ Home"] + llList2ListStrided(typefaces, 0, -1, 2),
             menu_channel
         );
 
@@ -192,27 +194,26 @@ dlg_fonts(key avatar){
 }
 dlg_access(key avatar){
     list buttons = ["■ Home"];
+    string access = "\n› Access\n";
     if (access_public == ACCESS_NONE){
-        buttons = buttons + [ACCESS_INDICATOR + "Public Off", "Public On"];
+        access = access + "Public: No access\n";
     } else if (access_public == ACCESS_WRITE){
-        buttons = buttons + ["Public Off", ACCESS_INDICATOR + "Public On"];
-    } else {
-        buttons = buttons + ["Public Off", "Public On"];
+        access = access + "Public: Change text\n";
     }
+        buttons = buttons + ["Public Off", "Public On"];
     
     if (access_group == ACCESS_NONE){
-        buttons = buttons + [ACCESS_INDICATOR + "Group Off", "Group On", "Group Menu"];
+        access = access + "Group: No access";
     } else if (access_group == ACCESS_WRITE){
-        buttons = buttons + ["Group Off", ACCESS_INDICATOR + "Group On", "Group Menu"];
+        access = access + "Group: Change text";
     } else if (access_group == ACCESS_MENU){
-        buttons = buttons + ["Group Off", "Group On", ACCESS_INDICATOR + "Group Menu"];
-    } else {
-        buttons = buttons + ["Group Off", "Group On", "Group Menu"];
+        access = access + "Group: access menu";
     }
+        buttons = buttons + ["Group Off", "Group On", "Group Menu"];
     
     llDialog(
         avatar,
-        "\n› Access\n",
+        access,
         //["■ Home", "▶Public Off", "Public On", "Group Off", "Group On", "Group Menu"],
         buttons,
         menu_channel
@@ -320,8 +321,8 @@ notecard_attr_line(string what, string value){
     }
 
 }
-notecard_attr_end(string what){
-}
+//notecard_attr_end(string what){
+//}
 
 integer check_access(key id, integer level){
     if (access_enabled == FALSE) {return TRUE;}
@@ -761,18 +762,33 @@ init(){
         ]);
 }
 
+//Assuming directly using literal lists is expensive, I've put the extent items as a string, 
+//using chars as a look up table.
+unpack_extents(){
+    integer i;
+    for (i = 0; i < llStringLength(extents_packed); i++){
+        extents += llSubStringIndex(chars, llGetSubString(extents_packed, i, i));
+    }
+}
+check_free_memory(){
+    say((string)["Free Memory: ",llGetFreeMemory()], 2);    
+}
+
 default
 {
     //script entry point
     //displahy some test words, and start listening
     state_entry()
     {
-        say((string)["Free Memory: ",llGetFreeMemory()], 2);
-        do_layout("The quick brown fox jumps over a lazy dog.");
+        check_free_memory();
+        unpack_extents();
+        check_free_memory();
+        //do_layout("The quick brown fox jumps over a lazy dog.");
+        //check_free_memory();
         if (num_fonts < 1){ start_loading_notecard();}
         llListen(menu_channel, "", NULL_KEY, "");
         llListen(listen_channel, "","","");
-        say((string)["Free Memory: ",llGetFreeMemory()], 2);
+        check_free_memory();
     }
     touch_start(integer total_number)
     {
@@ -795,13 +811,13 @@ default
     listen(integer channel, string name, key id, string msg){
         if (channel == listen_channel){
             if (check_access(id, ACCESS_WRITE)){
-                //llScriptProfiler(PROFILE_SCRIPT_MEMORY);
+                llScriptProfiler(PROFILE_SCRIPT_MEMORY);
                 llOwnerSay(name);
                 //llOwnerSay(msg);
                 do_layout(msg);
-                //llScriptProfiler(PROFILE_NONE);
-                //say("This script used at most " + (string)llGetSPMaxMemory() + " bytes of memory during layout and rendering.", 2);
-                say((string)["Free Memory: ",llGetFreeMemory()], 2);
+                llScriptProfiler(PROFILE_NONE);
+                say("This script used at most " + (string)llGetSPMaxMemory() + " bytes of memory during layout and rendering.", 2);
+                //say((string)["Used Memory: ",llGetFreeMemory()], 2);
             }
         } 
         else if (channel == menu_channel){
@@ -878,12 +894,9 @@ default
                     access_public = ACCESS_WRITE;
                     note("Any person can now change messages.");
                     dlg_access(id);
-                } else if (llGetSubString(msg, 0, llStringLength(ACCESS_INDICATOR) - 1) == ACCESS_INDICATOR) {
-                    note("Access settings NOT changed.");
-                    dlg_access(id);
                 } else {
                     integer i;
-                    for (i = 0; i < num_fonts; i++){
+                    i = llListFindList(typefaces, [msg]);
                         if (llList2String(typefaces, i) == msg){
                             //TODO: Test if avatar and if in region.
                             list noti = ["Selected font", msg , ".\n Now Loading..."];
@@ -896,14 +909,14 @@ default
                             nc_do = NC_READ_FONT_HEADER;
                             _typeface_name = llList2String(typefaces, i);
                             
-                            nc_line = llList2Integer(typefaces_index, i);
+                            nc_line = llList2Integer(typefaces, i + 1);
                             llGetNotecardLine(nc_name, nc_line);
                             return;
                         }
-                    }
                 }
             }
         }
+        check_free_memory();
     }
     dataserver(key queryid, string data){
 //        llOwnerSay((string)["Reading line", nc_line]);
@@ -911,8 +924,7 @@ default
         if (nc_do == NC_INIT_GET_COUNT){
             nc_num_lines = (integer) data;
             nc_line = 0;
-            _typefaces = [];
-            _typefaces_index = [];
+            typefaces = [];
             showProgressText("", nc_line, nc_num_lines);
             llGetNotecardLine(nc_name, nc_line);
             nc_do = NC_INIT;
@@ -932,7 +944,7 @@ default
                     integer closing_bracket = llSubStringIndex(data, "]");
                     if (closing_bracket != -1) {
                         string name = llGetSubString(data, 1, closing_bracket -1);
-                        _typefaces += [llToLower(name), name, nc_line];
+                        typefaces += [name, nc_line];
                     }
                 }
                 //llOwnerSay(data);
@@ -944,23 +956,12 @@ default
 
                 nc_do = NC_DO_NOTHING;
                 //FIXME llListSort might be O(n²) on SL and very likely to be O(n²) on OpenSim
-                //llOwnerSay(llList2CSV(_typefaces));
-                _typefaces = llListSort(_typefaces, 3, TRUE);
-                //llOwnerSay(llList2CSV(_typefaces));
-                //FIXME llList2ListStrided isn't making any sense.
-                typefaces = llList2ListStrided(llDeleteSubList(_typefaces, 0, 0), 0, -1, 3);
-                typefaces_index = llList2ListStrided(llDeleteSubList(_typefaces, 0, 1), 0, -1, 3);
-                
-                num_fonts = llGetListLength(typefaces);
+                typefaces = llListSort(typefaces, 2, TRUE);
+                num_fonts = llGetListLength(typefaces) / 2;
                 typefaces_total_pages = divide_and_round_up(num_fonts, 9); // 9 is the number of fonts to display each page, after subtracting the 3 navigation buttons
 
                 say((string)["Loaded ", num_fonts, " fonts."], 2);
-                say((string)["Free Memory: ",llGetFreeMemory()], 2);
                 llSetText((string)[""],float_text_color, float_text_alpha);
-
-                //llOwnerSay(llList2CSV(typefaces));
-                //llOwnerSay(llList2CSV(typefaces_index));
-                //llOwnerSay(llList2CSV(typefaces_next_index));
                 
             } // data != EOF
         } else if (nc_do == NC_READ_FONT_HEADER){
@@ -999,7 +1000,6 @@ default
                 //finish up the previous attribute
                 //set variables
                 //re-layout and render
-                notecard_attr_end(nc_what);
                 nc_do = NC_DO_NOTHING;
                 
                 if (tex == ""){ //required.
@@ -1081,9 +1081,9 @@ default
                 //dirty = 32767;
                 init();
                 
-                say((string)["Free Memory: ",llGetFreeMemory()], 2);
+                check_free_memory();
                 do_layout(text);
-                say((string)["Free Memory: ",llGetFreeMemory()], 2);
+                check_free_memory();
                 //if nobody else have touched the menu, re-show the menu
         
                 dlg_fonts (operator_id);
@@ -1091,7 +1091,7 @@ default
             } else if ((where = llSubStringIndex(data, "=")) != -1){
                 
                 //finish up the previous attribute
-                notecard_attr_end(nc_what);
+                //notecard_attr_end(nc_what);
                 
                 //read in the next attribute
                 nc_what = llStringTrim(llGetSubString(data, 0, where - 1 ), STRING_TRIM);
@@ -1111,6 +1111,7 @@ default
 //            nc_line++;
 //            llGetNotecardLine(nc_name, nc_line);
         }
+        check_free_memory();
     }
 }
 
