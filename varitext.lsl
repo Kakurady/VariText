@@ -42,8 +42,10 @@ integer nc_progress_bar_length = 8;
 //----- Default Font definition -----//
 string tex="droid serif 1"; //name or uuid of texture
 string chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         "; //list of characters in order of in texture
-list extents=[13]; //width of each, as a fraction defined by em below
-string extents_packed = "14<<ME+119<-0..<<<<<<<<<<.-<<<9NCA?D?>DH22C?OFE>EA;?DBTA?>2.2<7=<?9?;2;@0/=0O@=??872@=K=<:5<5<-----";
+list extents=[13, 17]; //width of each, as a fraction defined by em below
+//note: other than the first four characters, the remaining are stored packed into the following string
+string extents_packed = "4<<ME+119<-0..<<<<<<<<<<.-<<<9NCA?D?>DH22C?OFE>EA;?DBTA?>2.2<7=<?9?;2;@0/=0O@=??872@=K=<:5<5<-----";
+
 integer em = 50; //font width divider
 integer columns = 10; //number of columns in texture
 integer rows = 10; //number of row in texture
@@ -381,13 +383,13 @@ integer is_whitespace (string char){
 //split text into lines
 //input: The text to be wrapped.
 //return: T list with stride 3, containing the start of the line, the end of it, and the width of the line.
-
 //TODO: Split into Parse and Render stages
 list do_line_wrapping(string input){
+    check_free_memory();
     if (llGetListLength(extents) <= 0 ){return [];}
     
     integer len = llStringLength(input);
-    integer prims = llGetNumberOfPrims();
+    integer chars = 0;
     integer i = 0;
 
     //Note this function uses a somewhat different definition of character position than Second Life's,
@@ -402,141 +404,111 @@ list do_line_wrapping(string input){
 //    llOwnerSay((string) x_width);
     integer x_word = 0;
     //list debug_list = [];
-    list words = [];
     integer num_words = 0;
-    integer WORDS_LIST_STRIDE = 3; //begin, end, advance length
     
-    //more variable definitions below before actually wrapping words
-    
-    //split string into words.
-    while (i < len){
-        string current_char = llGetSubString(input, i, i);
-        if(is_whitespace(current_char)){
-            if (cur_word_begin != cur_word_end){ 
-                // we have just came out of a word.
-                words += [cur_word_begin, cur_word_end, x_word];
-                x_word = 0;
-                num_words++;
-            }
-            // Advance the "cursor" after the current character (a whitespace).
-            cur_word_begin = cur_word_end = (i + 1);
-        } else { // character is printable 
-            
-            integer dx = todex(input, i); //This is slow: O(number of chars in texture); but can't go any faster.
-            integer x_dx = llList2Integer(extents, dx);
-            
-            // Add the width of the current character to the current word.
-            x_word += x_dx;
-            // Advance the selection past the current character.
-            cur_word_end = i + 1;
-            
-        }
-        i++;
-    }
-    //We are in the middle of a word at the end of the string.
-    // Add that word.
-    if (cur_word_begin != cur_word_end){
-        words += [cur_word_begin, cur_word_end, x_word];
-        x_word = 0;
-        num_words++;
-    }
-    
-    //DEBUG: print all the words.
-//    for(i = 0; i < num_words; i++){
-//        cur_word_begin = llList2Integer(words, i * WORDS_LIST_STRIDE + 0);
-//        cur_word_end = llList2Integer(words, i * WORDS_LIST_STRIDE + 1);
-//        integer x_dx = llList2Integer(words, i * WORDS_LIST_STRIDE + 2);
-//        if (cur_word_begin < cur_word_end){
-//            debug_list += [llGetSubString(input, cur_word_begin, cur_word_end - 1), x_dx];
-//        } else {
-//            debug_list += ["WARNING: word is empty", cur_word_begin, cur_word_end, x_dx];
-//        }
-//    }
-//    llOwnerSay(llList2CSV(debug_list));
-
-    //The definition of character position is still the same.
     integer cur_line_begin = 0;
     integer cur_line_end = 0;
     integer x_line = 0; //width of line
     integer j = 0;
     list lines = [];
+    //more variable definitions below before actually wrapping words
     
-    for(i = 0; i < num_words; i++){
-        
-        cur_word_begin = llList2Integer(words, i * WORDS_LIST_STRIDE + 0);
-        cur_word_end = llList2Integer(words, i * WORDS_LIST_STRIDE + 1);
-        //integer 
-        x_word  = llList2Integer(words, i * WORDS_LIST_STRIDE + 2);
-        
-        if (x_word < x_width){
-            // At least this word can fit into one line.
-            integer new_width = x_line + x_word;
-            if (new_width > x_width){
-                // Won't fit into current line: start a new line.
-                lines += [cur_line_begin, cur_line_end, x_line];
-                x_line = x_word;
-                cur_line_begin = cur_word_begin;
-                cur_line_end = cur_word_end;
-            } else {
-                x_line = new_width;
-                cur_line_end = cur_word_end;
-            }
-        } else { 
-            // this is an overlong word.
-            // put as much word on each line.
-            for(j = cur_word_begin; j < cur_word_end; j++){
-                integer dx = todex(input, j);
-                integer x_dx = llList2Integer(extents, dx);
+    //split string into words.
+    //(this loop goes out of bounds on purpose)
+    while (i <= len){
+        string current_char = llGetSubString(input, i, i);
+    
+        integer CHARS_PER_PRIM = 5;
+        if (chars / CHARS_PER_PRIM > llGetNumberOfPrims()){
+            //we can stop now: there aren't enough prims to write this text.
+            i = len;
+            current_char = " ";
+        }
+        if( !is_whitespace(current_char) &&  (! (i == len)) ){
+
+            // Add the width of the current character to the current word.
+            x_word += llList2Integer(extents, todex(input, i));
+            // Advance the selection past the current character.
+            cur_word_end = i + 1;
+
+            //increment the number of printable characters
+            chars += 1;
+            
+        } else { // character is not printable 
+            if (cur_word_begin != cur_word_end){ 
+                // we have just came out of a word.
+                // see if this fits into a new line
+                say(llGetSubString(input, cur_word_begin, cur_word_end - 1), 5);
+    
+                if (x_word < x_width){
+                    // At least this word can fit into one line.
+                    integer new_width = x_line + x_word;
+                    if (new_width > x_width){
+                        // Won't fit into current line: start a new line.
+                        lines += [cur_line_begin, cur_line_end, x_line];
+                        x_line = x_word;
+                        cur_line_begin = cur_word_begin;
+                        cur_line_end = cur_word_end;
+                        say(llGetSubString(input, cur_line_begin, cur_line_end - 1), 5);
+                        check_free_memory();
+                    } else {
+                        // Add current word to current line.
+                        x_line = new_width;
+                        cur_line_end = cur_word_end;
+                    }
+                } else { 
+                    // this is an overlong word.
+                    // put as much word on each line.
+                    for(j = cur_word_begin; j < cur_word_end; j++){
+                        integer dx = todex(input, j);
+                        integer x_dx = llList2Integer(extents, dx);
+                        
+                        x_line += x_dx;
+                        if (x_line > x_width){
+                            //start a new line.
+                            //cur_line_end is "before" j
+                            lines += [cur_line_begin, cur_line_end, x_line - x_dx];
+                            x_line = x_dx;
+                            cur_line_begin = j;
+                            cur_line_end = j + 1;
+                        } else {
+                            cur_line_end = j + 1;
+                        }
+                    }
+                }
+
+                num_words++;
                 
-                x_line += x_dx;
-                if (x_line > x_width){
-                    //start a new line.
-                    //cur_line_end is "before" j
-                    lines += [cur_line_begin, cur_line_end, x_line - x_dx];
-                    x_line = x_dx;
-                    cur_line_begin = j;
-                    cur_line_end = j + 1;
-                } else {
-                    cur_line_end = j + 1;
-                }
             }
-        }
-        //now add the space for non-printables.
-        //TODO: newlines?
-        
-        //TODO: will fix later, now just pretend spaces don't take spaces
-        if((i + 1) < num_words){
-            integer next_word_begin = llList2Integer(words, (i + 1) * WORDS_LIST_STRIDE + 0);
-            for (j = cur_word_end; j < next_word_begin; j++){
-                string current_char = llGetSubString(input, j, j);
-                if (current_char == "\n"){
+            // check if the current character is a forced line break.
+            if (current_char == "\n"){
+                if (cur_line_begin != i){ 
                     lines += [cur_line_begin, cur_line_end, x_line];
-                    x_line = 0;
-                    cur_line_begin = j+1;
-                    cur_line_end = j+1;
-                } else {
-                    //assume it's a space.
-                    x_line += llList2Integer(extents, 0);
                 }
+                x_line = 0;
+                cur_line_begin = i+1;
+                cur_line_end = i+1;
+                check_free_memory();
+            } else {
+                //assume it's a space.
+                x_line += llList2Integer(extents, 0);
             }
-        } else {
-            //last word! 
-            lines += [cur_line_begin, cur_line_end, x_line];
+            // Advance the "cursor" after the current character (a whitespace).
+            x_word = 0;                            
+            cur_word_begin = cur_word_end = (i + 1);
         }
+        i++;
     }
-    //DEBUG: print the final layout.
-//    len = llGetListLength(lines);
-//    for (i = 0; i < len; i += LINE_LIST_STRIDE){
-//        cur_line_begin = llList2Integer(lines, i);
-//        cur_line_end   = llList2Integer(lines, i + 1);
-//        if (cur_line_begin < cur_line_end){
-//            llOwnerSay(llGetSubString(input, cur_line_begin, cur_line_end - 1));
-//        } else {
-//            //empty line
-//            llOwnerSay("");
-//        }
-//    }
-    
+    //We are in the middle of a line at the end of the string.
+    // Add that line.
+    if (cur_line_begin != cur_line_end){
+        lines += [cur_line_begin, cur_line_end, x_line];
+        x_word = 0;
+        num_words++;
+    }
+
+    say(llList2CSV(lines), 5);
+    check_free_memory();
     return lines;
 }
 do_layout(string input){
@@ -811,11 +783,9 @@ default
     listen(integer channel, string name, key id, string msg){
         if (channel == listen_channel){
             if (check_access(id, ACCESS_WRITE)){
-                llScriptProfiler(PROFILE_SCRIPT_MEMORY);
                 llOwnerSay(name);
                 //llOwnerSay(msg);
                 do_layout(msg);
-                llScriptProfiler(PROFILE_NONE);
                 say("This script used at most " + (string)llGetSPMaxMemory() + " bytes of memory during layout and rendering.", 2);
                 //say((string)["Used Memory: ",llGetFreeMemory()], 2);
             }
