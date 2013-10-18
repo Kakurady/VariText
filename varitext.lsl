@@ -36,9 +36,6 @@ integer access_applied_to_objects = FALSE;
 vector float_text_color = <1, 1, 1>;
 float  float_text_alpha = 1;
 
-list nc_progress_bar_l = ["░","▏","▎","▍","▌","▋","▊","▉","█"];
-integer nc_progress_bar_length = 8;
-
 //----- Default Font definition -----//
 string tex="droid serif 1"; //name or uuid of texture
 string chars=" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~         "; //list of characters in order of in texture
@@ -232,44 +229,11 @@ dlg_setup(key avatar){
 
 //------Notecard Reader------//
 
-//                  Progress Bar v1                  //
-//                  By Nexii Malthus                 //
-//                   Public Domain                   //
-
-//http://wiki.secondlife.com/wiki/Progress_Bar
-//A bit terse, but why reinvent the wheel?
-// (one compelling reason is that this stratergy doesn't work for inputs outside 0.0..1.0)
-//for the blank cell.
-string Bars( float Cur, integer Bars, list Charset ){
-    // Input    = 0.0 to 1.0
-    // Bars     = char length of progress bar
-    // Charset  = [Blank,<Shades>,Solid];
-    integer Shades = llGetListLength(Charset)-1;
-            Cur *= Bars;
-    integer Solids  = llFloor( Cur );
-    integer Shade   = llRound( (Cur-Solids)*Shades );
-    integer Blanks  = Bars - Solids - 1;
-    string str;
-    
-    while( Solids-- >0 ) 
-        str += llList2String( Charset, -1 );
-    if( Blanks >= 0 ) 
-        str += llList2String( Charset, Shade );
-    while( Blanks-- >0 ) 
-        str += llList2String( Charset, 0 );
-    return str; 
-}
 showProgressText(string reason, integer value, integer total){
     if (reason == "") { reason = "Reading Notecard"; }
-    float progress = 0.0;
-    string progressbar = "";
-    if (total > 0){
-        progress =  value / (float)total;
-        progressbar = Bars(progress, nc_progress_bar_length, nc_progress_bar_l);
-    }
     llSetText(
         (string)[reason, "\n", 
-            value, "/", total, " ", "|", progressbar, "|"],
+            value, "/", total],
         float_text_color, float_text_alpha
     );
 }
