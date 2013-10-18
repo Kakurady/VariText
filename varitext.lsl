@@ -511,6 +511,7 @@ list do_line_wrapping(string input){
     check_free_memory();
     return lines;
 }
+
 do_layout(string input){
 
     text = input;
@@ -518,6 +519,10 @@ do_layout(string input){
     if (llStringLength(chars) <= 0 ){return;}
     
     list lines = do_line_wrapping(input);
+    draw_chars(input, lines);
+}
+
+draw_chars(string input, list lines){
     integer num_lines = llGetListLength(lines) / LINE_LIST_STRIDE;
     integer line;
     integer x_line = 0;
@@ -676,6 +681,7 @@ do_layout(string input){
             //not the best idea, better trim the list when l=0
             if (i != 0){
                 posvec.x += last_right + this_left;
+                //posvec.y = - 0.02 - llFrand(scale);
                 paramslist =  paramslist + [PRIM_POSITION, posvec, PRIM_ROT_LOCAL, down];
             } else {
                 first_left = this_left;
